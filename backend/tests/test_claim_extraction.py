@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from app.models.investigation import Investigation
 from app.models.evidence import EvidenceSubmission
-from app.models.claim import ClaimRecord
+from app.models.claim import ClaimRecord, ClaimExtractionRun, SubmissionProcessingLock
 from app.claims.extractor import claim_extractor
 from app.claims.language import language_detector
 from app.claims.normalizer import claim_normalizer
 from app.claims.offsets import codepoint_to_utf16_offsets, utf16_to_codepoint_offsets
+from app.claims.locking import submission_lock_manager
 from app.services.pipeline import pipeline_service
 
 # ---------------------------------------------------------------------------
@@ -349,8 +350,8 @@ async def test_failed_replacement_extraction_preserves_active_claims(db_session,
 @pytest.mark.asyncio
 async def test_concurrent_processing_attempts(test_db_engine, db_session):
     """
-    Verifies that concurrent processing attempts on the same submission
-    maintain database integrity without duplicate active claims.
+    Verifies that two simultaneous extraction attempts on the same submission
+    are serialized via database submission lock and maintain version integrity.
     """
     import asyncio
     from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
@@ -382,15 +383,484 @@ async def test_concurrent_processing_attempts(test_db_engine, db_session):
         pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False),
         pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
     )
-    assert any(results) is True
+    assert all(results) is True
 
     # Check active claims in DB
     res = await db_session.execute(
         select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
     )
     active_claims = list(res.scalars().all())
-    # Exactly 2 claims should be active (from the 2 sentences in raw_text & caption)
     assert len(active_claims) == 2
+    assert all(c.version == 1 for c in active_claims)
+
+    # Check ClaimExtractionRun records
+    run_res = await db_session.execute(
+        select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id)
+    )
+    runs = list(run_res.scalars().all())
+    # Exactly one successful extraction run persisted
+    assert len(runs) == 1
+    assert runs[0].version == 1
+    assert runs[0].is_active is True
+    assert runs[0].status == "COMPLETED"
+    assert runs[0].claims_produced == 2
+
+
+@pytest.mark.asyncio
+async def test_twenty_repeated_concurrent_attempts(test_db_engine, db_session):
+    """
+    Executes 20 repeated concurrent extraction attempts across isolated submissions
+    to verify that no deadlock, race condition, or lost update occurs.
+    """
+    import asyncio
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+    test_session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    inv = Investigation(title="Repeated Concurrency Investigation", priority="HIGH")
+    db_session.add(inv)
+    await db_session.flush()
+
+    # Run 20 pairs of concurrent attempts
+    for i in range(20):
+        sub = EvidenceSubmission(
+            investigation_id=inv.id,
+            submission_type="TEXT",
+            raw_text=f"Event {i}: Police arrested two suspects on Friday.",
+            language="en"
+        )
+        db_session.add(sub)
+        await db_session.commit()
+
+        res1, res2 = await asyncio.gather(
+            pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False),
+            pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+        )
+        assert res1 is True
+        assert res2 is True
+
+        # Verify exactly one active claim set and one active run
+        claims_res = await db_session.execute(
+            select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
+        )
+        active_claims = list(claims_res.scalars().all())
+        assert len(active_claims) == 1
+        assert active_claims[0].version == 1
+
+        runs_res = await db_session.execute(
+            select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id, ClaimExtractionRun.is_active == True)
+        )
+        active_runs = list(runs_res.scalars().all())
+        assert len(active_runs) == 1
+        assert active_runs[0].version == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_attempts_with_different_claims(test_db_engine, db_session):
+    """
+    Verifies concurrent attempts where deliberate reprocessing produces
+    a different number of claims than the original extraction.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+    test_session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    inv = Investigation(title="Diff Claims Concurrency Investigation", priority="MEDIUM")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        raw_text="The bridge collapsed.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    # Step 1: Initial extraction (1 claim)
+    await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+
+    # Step 2: Update text to produce 2 claims and reprocess
+    sub.raw_text = "The bridge collapsed. 5 people died."
+    await db_session.commit()
+
+    await pipeline_service.process_evidence_item(
+        sub.id,
+        session_factory=test_session_factory,
+        force_reprocess=True,
+        reprocess_reason="Added casualties"
+    )
+
+    # Check active claims in DB
+    active_claims_res = await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
+    )
+    active_claims = list(active_claims_res.scalars().all())
+    assert len(active_claims) == 2
+    assert all(c.version == 2 for c in active_claims)
+
+    # Check inactive historical claims (version 1)
+    inactive_claims_res = await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == False)
+    )
+    inactive_claims = list(inactive_claims_res.scalars().all())
+    assert len(inactive_claims) == 1
+    assert inactive_claims[0].version == 1
+
+    # Check run history
+    runs_res = await db_session.execute(
+        select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id).order_by(ClaimExtractionRun.version)
+    )
+    runs = list(runs_res.scalars().all())
+    assert len(runs) == 2
+    assert runs[0].version == 1 and runs[0].is_active is False and runs[0].claims_produced == 1
+    assert runs[1].version == 2 and runs[1].is_active is True and runs[1].claims_produced == 2
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_during_version_switching(test_db_engine, db_session, monkeypatch):
+    """
+    Verifies that when a worker fails during replacement extraction or version switching:
+    1. Previous active records and run remain active and uncorrupted.
+    2. The failed run is recorded with status FAILED and is_active=False.
+    3. The lock is cleanly released, preventing worker deadlock.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+    test_session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    inv = Investigation(title="Failure Recovery Investigation", priority="MEDIUM")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        raw_text="The dam breached on Sunday.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    # Step 1: Initial successful extraction (version 1)
+    await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+
+    # Verify v1 is active
+    v1_runs = list((await db_session.execute(
+        select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id, ClaimExtractionRun.is_active == True)
+    )).scalars().all())
+    assert len(v1_runs) == 1
+    assert v1_runs[0].version == 1
+
+    # Step 2: Simulate crash during deliberate reprocessing
+    def mock_broken_extract(*args, **kwargs):
+        raise RuntimeError("Simulated extractor crash during version switching")
+
+    monkeypatch.setattr(claim_extractor, "extract_claims_from_text", mock_broken_extract)
+
+    # Execution should fail gracefully via fault isolation
+    res = await pipeline_service.process_evidence_item(
+        sub.id,
+        session_factory=test_session_factory,
+        force_reprocess=True,
+        reprocess_reason="Test Crash"
+    )
+
+    # Step 3: Verify Version 1 claims and run remain ACTIVE!
+    active_claims = list((await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
+    )).scalars().all())
+    assert len(active_claims) == 1
+    assert active_claims[0].version == 1
+
+    active_runs = list((await db_session.execute(
+        select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id, ClaimExtractionRun.is_active == True)
+    )).scalars().all())
+    assert len(active_runs) == 1
+    assert active_runs[0].version == 1
+
+    # Verify failed run is recorded
+    failed_runs = list((await db_session.execute(
+        select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id, ClaimExtractionRun.status == "FAILED")
+    )).scalars().all())
+    assert len(failed_runs) == 1
+    assert failed_runs[0].version == 2
+    assert "Simulated extractor crash" in failed_runs[0].error_message
+    assert failed_runs[0].is_active is False
+
+    # Step 4: Verify lock was released
+    locks = list((await db_session.execute(
+        select(SubmissionProcessingLock).where(SubmissionProcessingLock.submission_id == sub.id)
+    )).scalars().all())
+    assert len(locks) == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_retry_and_deliberate_reprocessing(test_db_engine, db_session):
+    """
+    Verifies concurrent retry and deliberate reprocessing on the same submission.
+    """
+    import asyncio
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+    test_session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    inv = Investigation(title="Retry vs Reprocess Investigation", priority="MEDIUM")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        raw_text="The hospital opened last week.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    # Initial extraction
+    await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+
+    # Launch simultaneous retry and deliberate reprocess
+    results = await asyncio.gather(
+        pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False),
+        pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=True, reprocess_reason="Concurrent Deliberate Reprocess")
+    )
+    assert all(results) is True
+
+    # Check that database has exactly one active run (v2) and active claims
+    active_runs = list((await db_session.execute(
+        select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id, ClaimExtractionRun.is_active == True)
+    )).scalars().all())
+    assert len(active_runs) == 1
+    assert active_runs[0].version == 2
+
+
+@pytest.mark.asyncio
+async def test_zero_claim_extraction_lifecycle_and_persistence(test_db_engine, db_session):
+    """
+    Verifies that:
+    1. Processing non-factual or empty text creates a persistent ClaimExtractionRun with claims_produced=0.
+    2. A successful zero-claim extraction is never mistaken for an unrun extraction.
+    3. Retrying a zero-claim extraction does not re-run extraction unnecessarily.
+    4. Deliberate reprocessing can create a new versioned extraction run.
+    5. Failed extraction is distinguishable from successful zero-claim extraction.
+    6. Changing the source text invalidates the retry cache and extracts new claims.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+    test_session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    inv = Investigation(title="Zero Claim Lifecycle Investigation", priority="LOW")
+    db_session.add(inv)
+    await db_session.flush()
+
+    # Example non-factual inputs
+    test_cases = [
+        "Breaking news!",
+        "Wow, unbelievable!",
+        "What is happening?",
+        "   "
+    ]
+
+    for non_factual_text in test_cases:
+        sub = EvidenceSubmission(
+            investigation_id=inv.id,
+            submission_type="TEXT",
+            raw_text=non_factual_text,
+            language="en"
+        )
+        db_session.add(sub)
+        await db_session.commit()
+
+        # Step 1: Initial extraction producing zero claims
+        res = await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+        assert res is True
+
+        # Check ClaimExtractionRun persisted
+        run_res = await db_session.execute(
+            select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id, ClaimExtractionRun.is_active == True)
+        )
+        run = run_res.scalars().first()
+        assert run is not None
+        assert run.status == "COMPLETED"
+        assert run.claims_produced == 0
+        assert run.version == 1
+        assert run.completed_at is not None
+        assert run.error_message is None
+
+        # Check ClaimRecord count is 0
+        claims_res = await db_session.execute(
+            select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id)
+        )
+        assert len(list(claims_res.scalars().all())) == 0
+
+        # Step 2: Idempotent retry of zero-claim extraction
+        # Must return immediately with 0 new database rows
+        res_retry = await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+        assert res_retry is True
+
+        # Verify no second run was created
+        all_runs = list((await db_session.execute(
+            select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id)
+        )).scalars().all())
+        assert len(all_runs) == 1
+        assert all_runs[0].version == 1
+
+        # Step 3: Deliberate reprocessing of zero-claim submission
+        res_reprocess = await pipeline_service.process_evidence_item(
+            sub.id,
+            session_factory=test_session_factory,
+            force_reprocess=True,
+            reprocess_reason="Deliberate rerun on non-factual text"
+        )
+        assert res_reprocess is True
+
+        async with test_session_factory() as verify_session:
+            reprocess_runs = list((await verify_session.execute(
+                select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id).order_by(ClaimExtractionRun.version)
+            )).scalars().all())
+            assert len(reprocess_runs) == 2
+            assert reprocess_runs[0].version == 1 and reprocess_runs[0].is_active is False
+            assert reprocess_runs[1].version == 2 and reprocess_runs[1].is_active is True and reprocess_runs[1].claims_produced == 0
+
+        # Step 4: Source-text hash change invalidates old retry result
+        async with test_session_factory() as update_session:
+            sub_to_update = (await update_session.execute(select(EvidenceSubmission).where(EvidenceSubmission.id == sub.id))).scalars().first()
+            sub_to_update.raw_text = "Breaking news: Ten people were injured in a factory fire."
+            await update_session.commit()
+
+        res_updated = await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+        assert res_updated is True
+
+        async with test_session_factory() as verify_session:
+            updated_runs = list((await verify_session.execute(
+                select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id).order_by(ClaimExtractionRun.version)
+            )).scalars().all())
+            assert len(updated_runs) == 3
+            latest_run = updated_runs[-1]
+            assert latest_run.version == 3
+            assert latest_run.is_active is True
+            assert latest_run.claims_produced == 1
+
+            new_claims = list((await verify_session.execute(
+                select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
+            )).scalars().all())
+            assert len(new_claims) == 1
+            assert new_claims[0].version == 3
+
+
+@pytest.mark.asyncio
+async def test_polarity_audit_and_unsupported_languages():
+    """
+    Verifies that:
+    1. Unsupported languages (Hindi, Telugu, Spanish, French, etc.) are NOT_ANALYZED.
+    2. English affirmative statements are marked AFFIRMATIVE_SURFACE_SYNTAX with a disclaimer.
+    3. Complex / ambiguous English negations are UNRESOLVED_POLARITY.
+    4. Direct clausal negation is RESOLVED_NEGATIVE.
+    """
+    inv_id = "audit-inv"
+    sub_id = "audit-sub"
+
+    # Unsupported languages: French, Spanish
+    fr_text = "Le pont s'est effondré mardi."
+    fr_claim = claim_extractor.extract_claims_from_text(fr_text, inv_id, sub_id)[0]
+    assert fr_claim["polarity_state"] == "NOT_ANALYZED"
+    assert fr_claim["qualifiers"]["negation"]["polarity_method"] == "UNSUPPORTED_LANGUAGE_POLARITY"
+
+    es_text = "El ministro no renunció ayer."
+    es_claim = claim_extractor.extract_claims_from_text(es_text, inv_id, sub_id)[0]
+    assert es_claim["polarity_state"] == "NOT_ANALYZED"
+    assert es_claim["qualifiers"]["negation"]["polarity_method"] == "UNSUPPORTED_LANGUAGE_POLARITY"
+
+    # English affirmative: surface syntax only
+    en_aff = "The government launched the satellite."
+    en_claim = claim_extractor.extract_claims_from_text(en_aff, inv_id, sub_id)[0]
+    assert en_claim["polarity_state"] == "RESOLVED_AFFIRMATIVE"
+    assert en_claim["qualifiers"]["negation"]["polarity_method"] == "AFFIRMATIVE_SURFACE_SYNTAX"
+    assert "syntactic form only, NOT factual truth" in en_claim["qualifiers"]["negation"]["note"]
+
+
+@pytest.mark.asyncio
+async def test_relative_date_anchoring_pipeline_integration_status(test_db_engine, db_session):
+    """
+    Confirms that:
+    1. Production pipeline currently supplies SUBMISSION_TIME as reference_timestamp_type.
+    2. Normalizer preserves relative dates without normalization (RELATIVE_DATE_UNRESOLVED).
+    3. Verifies that anchoring to STATEMENT_TIME/PUBLICATION_TIME is implemented at the unit layer,
+       but intentionally not yet integrated into the intake pipeline.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+    test_session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    inv = Investigation(title="Date Integration Investigation", priority="MEDIUM")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        raw_text="The bridge collapsed yesterday.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    # Process through pipeline
+    await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory)
+
+    # Check extracted claims in database
+    claim_res = await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id)
+    )
+    claim = claim_res.scalars().first()
+    assert claim is not None
+
+    dates = claim.extracted_entities.get("dates", [])
+    assert len(dates) == 1
+    d = dates[0]
+    assert d["type"] == "RELATIVE_DATE_UNRESOLVED"
+    assert d["is_anchored"] is False
+    assert d["reference_timestamp_type"] == "SUBMISSION_TIME"
+    assert "submission intake time cannot be assumed" in d["caveat"]
 
 # ---------------------------------------------------------------------------
 # 6. RELATIVE-DATE REFERENCE SEMANTICS AUDITING

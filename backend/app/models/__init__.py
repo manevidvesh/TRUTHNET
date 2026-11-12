@@ -1,7 +1,7 @@
 from app.models.investigation import Investigation
 from app.models.evidence import MediaAsset, EvidenceSubmission, DerivedArtifact, ExtractionRecord
 from app.models.fingerprint import MediaFingerprint, FrameFingerprint, MediaMatchRecord
-from app.models.claim import ClaimRecord
+from app.models.claim import ClaimRecord, ClaimExtractionRun, SubmissionProcessingLock
 
 __all__ = [
     "Investigation",
@@ -13,4 +13,6 @@ __all__ = [
     "FrameFingerprint",
     "MediaMatchRecord",
     "ClaimRecord",
+    "ClaimExtractionRun",
+    "SubmissionProcessingLock",
 ]

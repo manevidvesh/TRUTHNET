@@ -7,8 +7,9 @@ from app.core.database import async_session_factory
 from app.core.security import safe_url_head_or_get
 from app.core.storage import storage_manager
 from app.models.evidence import EvidenceSubmission, MediaAsset, ExtractionRecord, DerivedArtifact
-from app.models.claim import ClaimRecord
+from app.models.claim import ClaimRecord, ClaimExtractionRun
 from app.claims.extractor import claim_extractor
+from app.claims.locking import submission_lock_manager
 from app.extractors.metadata import ImageMetadataExtractor, VideoMetadataExtractor, AudioMetadataExtractor
 from app.extractors.video_frames import keyframe_extractor
 from app.extractors.audio_demux import audio_demuxer
@@ -272,15 +273,21 @@ class PipelineService:
                         ocr_result,
                         transcription_result,
                         force_reprocess=force_reprocess,
-                        reprocess_reason=reprocess_reason
+                        reprocess_reason=reprocess_reason,
+                        session_factory=factory
                     )
                 except Exception as c_err:
                     logger.warning(f"Claim extraction non-fatal failure for submission {submission.id}: {c_err}")
 
                 # If all validation passes:
-                submission.processing_status = "COMPLETED"
-                submission.error_message = None
-                await session.commit()
+                sub_res = await session.execute(
+                    select(EvidenceSubmission).where(EvidenceSubmission.id == evidence_id)
+                )
+                current_sub = sub_res.scalars().first()
+                if current_sub:
+                    current_sub.processing_status = "COMPLETED"
+                    current_sub.error_message = None
+                    await session.commit()
                 return True
 
             except Exception as e:
@@ -329,21 +336,32 @@ class PipelineService:
         ocr_result: Optional[Dict[str, Any]] = None,
         transcription_result: Optional[Dict[str, Any]] = None,
         force_reprocess: bool = False,
-        reprocess_reason: Optional[str] = None
+        reprocess_reason: Optional[str] = None,
+        session_factory=None
     ) -> List[ClaimRecord]:
         """
         Extracts factual claim propositions across available text modalities
-        (caption, raw_text, OCR text, and speech transcripts) and persists ClaimRecords.
+        (caption, raw_text, OCR text, and speech transcripts) and persists ClaimRecords
+        alongside a persistent ClaimExtractionRun record.
 
         Strictly distinguishes:
-        1. Pipeline Retries: Same submission, identical source-text hashes, extraction already
-           succeeded. Skips re-extraction and returns existing active claims without version bump.
+        1. Pipeline Retries: Same submission, identical source-text hash, extraction already
+           succeeded (including zero-claim completions). Skips re-extraction and returns
+           existing active claims (or empty list) without version bump.
         2. Deliberate Reprocessing: Configuration changed, text updated, or explicit force_reprocess.
            Extracts new version in memory, deactivates prior claims atomically, and preserves historical audit trail.
+        3. Zero-Claim Completions: Persists a ClaimExtractionRun with claims_produced=0 and status=COMPLETED
+           so empty/non-factual texts are never mistaken for unrun extractions.
+        4. Serialized Concurrency: Uses submission_lock_manager (database table lock with TTL) to guarantee
+           per-submission execution serialization across multiple processes and workers.
         """
         import hashlib
+        from datetime import datetime, timezone
+        from typing import Tuple
 
-        # 1. Collect current available text modalities and their content hashes
+        factory = session_factory or self.session_factory or async_session_factory
+
+        # 1. Collect current available text modalities
         text_modalities: List[Tuple[str, str]] = []
         if submission.caption and submission.caption.strip():
             text_modalities.append(("CAPTION", submission.caption))
@@ -358,61 +376,141 @@ class PipelineService:
             if tr_text and tr_text.strip():
                 text_modalities.append(("TRANSCRIPT", tr_text))
 
-        if not text_modalities:
-            return []
+        # Build composite source text and hash across modalities
+        if text_modalities:
+            sorted_modalities = sorted(text_modalities, key=lambda x: x[0])
+            composite_text = "||".join(f"{mod}:{txt}" for mod, txt in sorted_modalities)
+            composite_hash = hashlib.sha256(composite_text.encode("utf-8")).hexdigest()
+            current_hashes = {hashlib.sha256(text.encode("utf-8")).hexdigest() for _, text in text_modalities}
+            primary_modality = "COMBINED" if len(text_modalities) > 1 else text_modalities[0][0]
+        else:
+            # Handles empty or whitespace-only inputs if permitted by ingestion layer
+            raw_content = (submission.caption or "") + (submission.raw_text or "")
+            composite_hash = hashlib.sha256(raw_content.encode("utf-8")).hexdigest()
+            current_hashes = {composite_hash}
+            primary_modality = "EMPTY"
 
-        current_hashes = {hashlib.sha256(text.encode("utf-8")).hexdigest() for _, text in text_modalities}
+        sub_id = submission.id
+        inv_id = submission.investigation_id
+        ref_timestamp = submission.created_at
 
-        # 2. Query existing claims for this submission
-        prior_claims_res = await session.execute(
-            select(ClaimRecord).where(ClaimRecord.evidence_submission_id == submission.id)
-        )
-        prior_claims = list(prior_claims_res.scalars().all())
-        active_claims = [c for c in prior_claims if c.is_active is True]
+        # Acquire per-submission database lock for serialized concurrency across processes
+        async with submission_lock_manager.acquire_lock(session, sub_id):
+            # 2. Query prior runs and claims for this submission
+            runs_res = await session.execute(
+                select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub_id)
+            )
+            prior_runs = list(runs_res.scalars().all())
+            active_run = next((r for r in prior_runs if r.is_active is True), None)
 
-        # 3. Check for Idempotent Retry
-        # If not an explicit reprocessing request AND active claims already exist for matching text hashes:
-        if not force_reprocess and active_claims:
-            active_hashes = {c.source_text_hash for c in active_claims}
-            if current_hashes.issubset(active_hashes):
+            prior_claims_res = await session.execute(
+                select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub_id)
+            )
+            prior_claims = list(prior_claims_res.scalars().all())
+            active_claims = [c for c in prior_claims if c.is_active is True]
+
+            # 3. Check for Idempotent Retry
+            # Case A: An active ClaimExtractionRun exists with COMPLETED status and matching composite hash
+            if not force_reprocess and active_run and active_run.status == "COMPLETED" and active_run.source_text_hash == composite_hash:
+                if active_run.claims_produced == 0:
+                    logger.info(
+                        f"Idempotent retry for submission {sub_id}: "
+                        f"Active extraction run v{active_run.version} completed with 0 claims. Returning existing 0 claims."
+                    )
+                    return []
                 logger.info(
-                    f"Idempotent retry for submission {submission.id}: "
-                    f"Active extraction version {active_claims[0].version} already exists. Returning existing claims."
+                    f"Idempotent retry for submission {sub_id}: "
+                    f"Active extraction run v{active_run.version} already completed with {len(active_claims)} claims. Returning existing claims."
                 )
                 return active_claims
 
-        # 4. Deliberate Reprocessing / Initial Extraction
-        next_claim_version = max([c.version for c in prior_claims], default=0) + 1
-        ref_timestamp = submission.created_at
+            # Case B: Backward compatibility with runs from earlier baselines without ClaimExtractionRun
+            if not force_reprocess and active_claims and not active_run:
+                active_hashes = {c.source_text_hash for c in active_claims}
+                if current_hashes.issubset(active_hashes):
+                    logger.info(
+                        f"Idempotent retry for submission {sub_id}: "
+                        f"Active claims version {active_claims[0].version} match text hashes. Returning existing claims."
+                    )
+                    return active_claims
 
-        # Execute extraction in memory first (guarantees atomic version switching)
-        claims_to_add: List[ClaimRecord] = []
-        for modality, text in text_modalities:
-            extracted = claim_extractor.extract_claims_from_text(
-                source_text=text,
-                investigation_id=submission.investigation_id,
-                evidence_submission_id=submission.id,
-                source_modality=modality,
-                reference_timestamp=ref_timestamp,
-                reference_timestamp_type="SUBMISSION_TIME",
-                extraction_version=next_claim_version
+            # 4. Deliberate Reprocessing / Initial Extraction
+            max_run_ver = max([r.version for r in prior_runs], default=0)
+            max_claim_ver = max([c.version for c in prior_claims], default=0)
+            next_claim_version = max(max_run_ver, max_claim_ver) + 1
+
+            # Execute extraction in memory first (guarantees atomic version switching)
+            claims_to_add: List[ClaimRecord] = []
+            try:
+                for modality, text in text_modalities:
+                    extracted = claim_extractor.extract_claims_from_text(
+                        source_text=text,
+                        investigation_id=inv_id,
+                        evidence_submission_id=sub_id,
+                        source_modality=modality,
+                        reference_timestamp=ref_timestamp,
+                        reference_timestamp_type="SUBMISSION_TIME",
+                        extraction_version=next_claim_version
+                    )
+                    for c_data in extracted:
+                        if c_data.get("is_factual_assertion") is False or c_data.get("extraction_state") == "NON_FACTUAL_STATEMENT":
+                            continue
+                        if reprocess_reason:
+                            prior_notes = c_data.get("uncertainty_notes") or ""
+                            c_data["uncertainty_notes"] = f"Reprocessed v{next_claim_version} ({reprocess_reason}). {prior_notes}".strip()
+                        claims_to_add.append(ClaimRecord(**c_data))
+            except Exception as extract_err:
+                # Failure isolation: Record FAILED run without deactivating prior active records!
+                failed_run = ClaimExtractionRun(
+                    evidence_submission_id=sub_id,
+                    version=next_claim_version,
+                    source_text_hash=composite_hash,
+                    source_modality=primary_modality,
+                    extractor_name="TruthNetClaimExtractor",
+                    extractor_version="1.0.0",
+                    status="FAILED",
+                    claims_produced=0,
+                    is_active=False,
+                    error_message=str(extract_err),
+                    reprocess_reason=reprocess_reason,
+                    completed_at=datetime.now(timezone.utc)
+                )
+                session.add(failed_run)
+                await session.flush()
+                raise extract_err
+
+            # Atomic database update: deactivate prior runs & claims
+            for pr in prior_runs:
+                pr.is_active = False
+
+            for pc in prior_claims:
+                pc.is_active = False
+
+            # Create persistent ClaimExtractionRun record
+            run_record = ClaimExtractionRun(
+                evidence_submission_id=sub_id,
+                version=next_claim_version,
+                source_text_hash=composite_hash,
+                source_modality=primary_modality,
+                extractor_name="TruthNetClaimExtractor",
+                extractor_version="1.0.0",
+                status="COMPLETED",
+                claims_produced=len(claims_to_add),
+                is_active=True,
+                error_message=None,
+                reprocess_reason=reprocess_reason,
+                completed_at=datetime.now(timezone.utc)
             )
-            for c_data in extracted:
-                if reprocess_reason:
-                    prior_notes = c_data.get("uncertainty_notes") or ""
-                    c_data["uncertainty_notes"] = f"Reprocessed v{next_claim_version} ({reprocess_reason}). {prior_notes}".strip()
-                claims_to_add.append(ClaimRecord(**c_data))
-
-        # Atomic database update: only deactivate prior claims once new claims are ready
-        for pc in prior_claims:
-            pc.is_active = False
-
-        for rec in claims_to_add:
-            session.add(rec)
-
-        if claims_to_add or prior_claims:
+            session.add(run_record)
             await session.flush()
 
-        return claims_to_add
+            for rec in claims_to_add:
+                rec.extraction_run_id = run_record.id
+                session.add(rec)
+
+            if claims_to_add or prior_claims or prior_runs:
+                await session.flush()
+
+            return claims_to_add
 
 pipeline_service = PipelineService()

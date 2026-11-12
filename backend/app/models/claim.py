@@ -1,11 +1,73 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+class ClaimExtractionRun(Base):
+    """
+    Persistent record representing an atomic claim extraction execution run.
+    Records extraction lifecycle, text content hashes, processing status,
+    number of claims produced (including zero-claim runs), versioning,
+    and completion telemetry.
+    """
+    __tablename__ = "claim_extraction_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    evidence_submission_id: Mapped[str] = mapped_column(String(36), ForeignKey("evidence_submissions.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Extraction Versioning & Active Run Tracking
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Content and Modality Hashes
+    source_text_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_modality: Mapped[str] = mapped_column(String(50), nullable=False)  # CAPTION, RAW_TEXT, OCR_EXTRACTED, TRANSCRIPT, COMBINED
+
+    # Extractor Implementation Metadata
+    extractor_name: Mapped[str] = mapped_column(String(100), default="TruthNetClaimExtractor", nullable=False)
+    extractor_version: Mapped[str] = mapped_column(String(50), default="1.0.0", nullable=False)
+
+    # Processing Status: COMPLETED, FAILED, RUNNING
+    status: Mapped[str] = mapped_column(String(50), default="COMPLETED", nullable=False)
+
+    # Count of claims produced (explicitly permits 0 for non-factual or empty text)
+    claims_produced: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Error details if failed
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Reprocess Reason / Notes
+    reprocess_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("evidence_submission_id", "version", name="uq_claim_run_submission_version"),
+    )
+
+    # Relationships
+    evidence_submission = relationship("EvidenceSubmission", back_populates="claim_extraction_runs")
+    claims = relationship("ClaimRecord", back_populates="extraction_run", cascade="all, delete-orphan")
+
+
+class SubmissionProcessingLock(Base):
+    """
+    Physical database-level per-submission lock table ensuring serialized execution
+    across concurrent workers and separate OS processes without relying on in-memory locks.
+    Includes TTL-based stale worker recovery.
+    """
+    __tablename__ = "submission_processing_locks"
+
+    submission_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    locked_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    locked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
 
 class ClaimRecord(Base):
     """
@@ -19,6 +81,7 @@ class ClaimRecord(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     investigation_id: Mapped[str] = mapped_column(String(36), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
     evidence_submission_id: Mapped[str] = mapped_column(String(36), ForeignKey("evidence_submissions.id", ondelete="CASCADE"), nullable=False, index=True)
+    extraction_run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("claim_extraction_runs.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # Extraction Versioning & Idempotency
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -33,7 +96,7 @@ class ClaimRecord(Base):
     extraction_state: Mapped[str] = mapped_column(String(50), default="EXTRACTED_CLAIM_CANDIDATE", nullable=False)
 
     # Polarity & Negation State:
-    # RESOLVED_AFFIRMATIVE, RESOLVED_NEGATIVE, UNRESOLVED_POLARITY
+    # RESOLVED_AFFIRMATIVE, RESOLVED_NEGATIVE, UNRESOLVED_POLARITY, NOT_ANALYZED
     polarity_state: Mapped[str] = mapped_column(String(50), default="RESOLVED_AFFIRMATIVE", nullable=False)
 
     # Attribution Flag
@@ -73,3 +136,4 @@ class ClaimRecord(Base):
     # Relationships
     investigation = relationship("Investigation", back_populates="claims")
     evidence_submission = relationship("EvidenceSubmission", back_populates="claims")
+    extraction_run = relationship("ClaimExtractionRun", back_populates="claims")

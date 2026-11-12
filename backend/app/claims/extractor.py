@@ -24,6 +24,7 @@ _EVALUATIVE_CONNECTOR_RE = re.compile(
 _PURE_OPINION_PATTERNS = [
     re.compile(r"\b(?:worst|best|terrible|awesome|horrible|disgusting|ridiculous|amazing|gorgeous|ugly)\s+(?:ever|decision\s+ever|thing\s+ever|movie\s+ever|policy\s+ever)\b", re.IGNORECASE),
     re.compile(r"^\s*(?:shame\s+on|congratulations|happy\s+birthday|good\s+morning|hello\s+everyone|wow|omg)\b", re.IGNORECASE),
+    re.compile(r"^\s*(?:breaking\s+news|urgent\s+update|alert|update|exclusive)[\s\!:]*$", re.IGNORECASE),
     re.compile(r"\?\s*$"),  # Questions
     re.compile(r"^\s*(?:why|how|what|who|when|where|is\s+it\s+true\s+that|isn't\s+it)\b.*\?\s*$", re.IGNORECASE),
     re.compile(r"^\s*(?:क्या|क्यों|कैसे|कब|कहाँ)\b.*[\?।]?\s*$"),
@@ -496,19 +497,29 @@ class ClaimExtractor:
             negation_markers.append({"marker": m.group(0), "span": [m.start(), m.end()]})
 
         polarity_state = "RESOLVED_AFFIRMATIVE"
-        polarity_method = "AFFIRMATIVE_DEFAULT"
+        polarity_method = "AFFIRMATIVE_SURFACE_SYNTAX"
 
-        # Correct polarity semantics for unsupported languages (Hindi, Telugu)
-        if lang_res.language in ("hi", "te"):
+        # Correct polarity semantics for unsupported languages (Hindi, Telugu, and all non-English)
+        if lang_res.language != "en":
             polarity_state = "NOT_ANALYZED"
             polarity_method = "UNSUPPORTED_LANGUAGE_POLARITY"
             qualifiers["negation"] = {
                 "polarity_state": polarity_state,
                 "polarity_method": polarity_method,
                 "markers": negation_markers,
-                "note": f"Linguistic polarity not analyzed: grammatical dependency parser unavailable for {lang_res.language.upper()}. Absence of English negation markers does NOT imply affirmative truth."
+                "note": f"Linguistic polarity not analyzed: grammatical dependency parser unavailable for language '{lang_res.language.upper()}'. Absence of English negation markers does NOT imply affirmative truth."
             }
-        elif negation_markers:
+        elif not negation_markers:
+            # English affirmative surface syntax
+            polarity_state = "RESOLVED_AFFIRMATIVE"
+            polarity_method = "AFFIRMATIVE_SURFACE_SYNTAX"
+            qualifiers["negation"] = {
+                "polarity_state": polarity_state,
+                "polarity_method": polarity_method,
+                "markers": [],
+                "note": "Surface grammatical polarity is affirmative (no negation markers detected). This represents syntactic form only, NOT factual truth or real-world verification."
+            }
+        else:
             if _NESTED_SPEECH_ACT_RE.search(proposition_text):
                 polarity_state = "UNRESOLVED_POLARITY"
                 polarity_method = "NESTED_SPEECH_ACT_NEGATION"
