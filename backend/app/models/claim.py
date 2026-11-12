@@ -25,7 +25,7 @@ class ClaimExtractionRun(Base):
 
     # Content and Modality Hashes
     source_text_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    source_modality: Mapped[str] = mapped_column(String(50), nullable=False)  # CAPTION, RAW_TEXT, OCR_EXTRACTED, TRANSCRIPT, COMBINED
+    source_modality: Mapped[str] = mapped_column(String(100), nullable=False)  # CAPTION, RAW_TEXT, OCR_EXTRACTED, TRANSCRIPT, COMBINED[...]
 
     # Extractor Implementation Metadata
     extractor_name: Mapped[str] = mapped_column(String(100), default="TruthNetClaimExtractor", nullable=False)
@@ -64,7 +64,7 @@ class SubmissionProcessingLock(Base):
     __tablename__ = "submission_processing_locks"
 
     submission_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    locked_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    locked_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     fencing_token: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     locked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -111,7 +111,7 @@ class ClaimRecord(Base):
 
     # Source Modality and Character-Level Evidence Spans
     # Modality: CAPTION, RAW_TEXT, OCR_EXTRACTED, TRANSCRIPT
-    source_modality: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_modality: Mapped[str] = mapped_column(String(100), nullable=False)
     evidence_span_start: Mapped[int] = mapped_column(Integer, nullable=False)
     evidence_span_end: Mapped[int] = mapped_column(Integer, nullable=False)
     source_text_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

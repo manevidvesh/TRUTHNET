@@ -24,7 +24,7 @@ _EVALUATIVE_CONNECTOR_RE = re.compile(
 _PURE_OPINION_PATTERNS = [
     re.compile(r"\b(?:worst|best|terrible|awesome|horrible|disgusting|ridiculous|amazing|gorgeous|ugly)\s+(?:ever|decision\s+ever|thing\s+ever|movie\s+ever|policy\s+ever)\b", re.IGNORECASE),
     re.compile(r"^\s*(?:shame\s+on|congratulations|happy\s+birthday|good\s+morning|hello\s+everyone|wow|omg)\b", re.IGNORECASE),
-    re.compile(r"^\s*(?:breaking\s+news|urgent\s+update|alert|update|exclusive)[\s\!:]*$", re.IGNORECASE),
+    re.compile(r"^\s*(?:breaking\s+news|urgent\s+update|urgent\s+alert|alert|update|exclusive)[\s\!:]*$", re.IGNORECASE),
     re.compile(r"\?\s*$"),  # Questions
     re.compile(r"^\s*(?:why|how|what|who|when|where|is\s+it\s+true\s+that|isn't\s+it)\b.*\?\s*$", re.IGNORECASE),
     re.compile(r"^\s*(?:क्या|क्यों|कैसे|कब|कहाँ)\b.*[\?।]?\s*$"),

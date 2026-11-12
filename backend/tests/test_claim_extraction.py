@@ -609,11 +609,11 @@ async def test_worker_failure_during_version_switching(test_db_engine, db_sessio
     assert "Simulated extractor crash" in failed_runs[0].error_message
     assert failed_runs[0].is_active is False
 
-    # Step 4: Verify lock was released
+    # Step 4: Verify lock was released (persistent lock has locked_by=None)
     locks = list((await db_session.execute(
         select(SubmissionProcessingLock).where(SubmissionProcessingLock.submission_id == sub.id)
     )).scalars().all())
-    assert len(locks) == 0
+    assert len(locks) == 0 or locks[0].locked_by is None
 
 
 @pytest.mark.asyncio
@@ -1401,3 +1401,365 @@ async def test_retry_identity_full_matrix(test_db_engine, db_session):
         assert final_runs[0].version == 1 and final_runs[0].is_active is False
         assert final_runs[1].version == 2 and final_runs[1].is_active is False
         assert final_runs[2].version == 3 and final_runs[2].is_active is True
+
+
+# ---------------------------------------------------------------------------
+# 9. FINAL TRANSACTION-LEVEL CONCURRENCY AUDIT TESTS
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fencing_protects_commit_after_lease_expiry_and_preemption(test_db_engine, db_session):
+    """
+    Section 1 Audit Test:
+    Adversarial test verifying that fencing verification protects the actual commit.
+    Scenario:
+    1. Worker A acquires the lock for submission S (fencing_token = 1).
+    2. Worker A calls verify_lease() -> returns True.
+    3. Worker A pauses/stalls right before commit.
+    4. Worker A's lease expires.
+    5. Worker B acquires the lock for submission S (fencing_token = 2).
+    6. Worker B extracts claims (version 2) and commits them successfully via commit_with_fencing.
+    7. Worker A resumes and attempts to commit stale claims (version 1) via commit_with_fencing.
+    8. Assertions:
+       - Worker A's commit_with_fencing raises StaleLockException.
+       - Worker A's staged mutations are rolled back.
+       - Worker B's claims (version 2) remain ACTIVE and uncorrupted in the database.
+       - Worker A's claims (version 1) are NOT committed.
+       - Worker B's lock is NOT overwritten or released by Worker A.
+    """
+    test_session_factory = async_sessionmaker(bind=test_db_engine, class_=AsyncSession, expire_on_commit=False)
+
+    inv = Investigation(title="Fencing Commit Race Investigation", priority="HIGH")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        raw_text="Initial text for race.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    sub_id = sub.id
+    inv_id = inv.id
+
+    fast_lock_mgr = SubmissionLockManager(lock_duration_seconds=0.4, poll_interval_seconds=0.02)
+
+    # Step 1: Worker A acquires lock WITHOUT heartbeat (simulating a worker that will stall and expire)
+    async with test_session_factory() as session_a:
+        async with fast_lock_mgr.acquire_lock(session_a, sub_id, worker_id="worker-a") as lease_a:
+            assert lease_a.owner_token == "worker-a"
+            assert lease_a.fencing_token == 1
+
+            # Worker A checks verify_lease() -> succeeds at this moment
+            assert await fast_lock_mgr.verify_lease(session_a, lease_a) is True
+
+            # Worker A extracts claims in memory
+            stale_claim = ClaimRecord(
+                investigation_id=inv_id,
+                evidence_submission_id=sub_id,
+                version=1,
+                is_active=True,
+                claim_text="Stale claim extracted by worker A.",
+                normalized_claim="stale claim extracted by worker a",
+                extraction_state="EXTRACTED_CLAIM_CANDIDATE",
+                polarity_state="AFFIRMATIVE_SURFACE_SYNTAX",
+                source_modality="RAW_TEXT",
+                evidence_span_start=0,
+                evidence_span_end=33,
+                source_text_hash=hashlib.sha256(b"stale text A").hexdigest(),
+                language="en",
+                language_detection_method="deterministic_ascii",
+                is_factual_assertion=True
+            )
+
+            # Step 2: Worker A pauses longer than lock_duration_seconds (0.4s), allowing lease to expire
+            await asyncio.sleep(0.6)
+
+            # Step 3: Worker B arrives, acquires the expired lock with fencing_token = 2!
+            async with test_session_factory() as session_b:
+                async with fast_lock_mgr.acquire_lock(session_b, sub_id, worker_id="worker-b") as lease_b:
+                    assert lease_b.owner_token == "worker-b"
+                    assert lease_b.fencing_token == 2
+
+                    # Worker B extracts and commits active claim v2
+                    winner_claim = ClaimRecord(
+                        investigation_id=inv_id,
+                        evidence_submission_id=sub_id,
+                        version=2,
+                        is_active=True,
+                        claim_text="Legitimate claim extracted by winner worker B.",
+                        normalized_claim="legitimate claim extracted by winner worker b",
+                        extraction_state="EXTRACTED_CLAIM_CANDIDATE",
+                        polarity_state="AFFIRMATIVE_SURFACE_SYNTAX",
+                        source_modality="RAW_TEXT",
+                        evidence_span_start=0,
+                        evidence_span_end=46,
+                        source_text_hash=hashlib.sha256(b"winner text B").hexdigest(),
+                        language="en",
+                        language_detection_method="deterministic_ascii",
+                        is_factual_assertion=True
+                    )
+                    session_b.add(winner_claim)
+                    await session_b.flush()
+                    await fast_lock_mgr.commit_with_fencing(session_b, lease_b)
+
+            # Step 4: Worker A resumes and attempts to stage its stale claim and commit!
+            session_a.add(stale_claim)
+            await session_a.flush()
+
+            # Worker A's commit_with_fencing MUST raise StaleLockException and rollback!
+            with pytest.raises(StaleLockException) as exc_info:
+                await fast_lock_mgr.commit_with_fencing(session_a, lease_a)
+
+            assert "prior to commit" in str(exc_info.value) or "lost lock lease" in str(exc_info.value)
+
+    # Step 5: Verify database state
+    async with test_session_factory() as verify_session:
+        # Worker B's claim must be the ONLY claim in the database and must be active
+        claims = list((await verify_session.execute(
+            select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub_id)
+        )).scalars().all())
+        assert len(claims) == 1
+        assert claims[0].claim_text == "Legitimate claim extracted by winner worker B."
+        assert claims[0].version == 2
+        assert claims[0].is_active is True
+
+        # Worker A's stale claim was NEVER committed
+        stale_records = list((await verify_session.execute(
+            select(ClaimRecord).where(
+                ClaimRecord.evidence_submission_id == sub_id,
+                ClaimRecord.claim_text == "Stale claim extracted by worker A."
+            )
+        )).scalars().all())
+        assert len(stale_records) == 0
+
+
+@pytest.mark.asyncio
+async def test_fencing_token_monotonicity_across_normal_releases(test_db_engine):
+    """
+    Section 2 Audit Test:
+    Verifies that fencing tokens strictly increase monotonically across normal release
+    and stale recovery, and NEVER reset to 1.
+    Tests >= 10 sequential acquisitions across normal releases, followed by stale recovery.
+    """
+    test_session_factory = async_sessionmaker(bind=test_db_engine, class_=AsyncSession, expire_on_commit=False)
+    sub_id = "test-sub-fencing-monotonicity"
+    lock_mgr = SubmissionLockManager(lock_duration_seconds=0.3, poll_interval_seconds=0.01)
+
+    observed_tokens = []
+
+    # Sequential acquisitions 1 to 10 with normal release
+    for i in range(1, 11):
+        async with test_session_factory() as session:
+            async with lock_mgr.acquire_lock(session, sub_id, worker_id=f"worker-{i}") as lease:
+                observed_tokens.append(lease.fencing_token)
+                assert lease.fencing_token == i
+                assert lease.is_active is True
+        # Normal release happens here upon exiting the context manager!
+
+    # Verify all 10 tokens match 1..10 exactly and are strictly increasing
+    assert observed_tokens == list(range(1, 11))
+    for idx in range(len(observed_tokens) - 1):
+        assert observed_tokens[idx + 1] > observed_tokens[idx]
+
+    # Now verify stale crash recovery also increments monotonically (acquisition 11 expires -> acquisition 12)
+    async with test_session_factory() as session_11:
+        # Worker 11 acquires without release (simulating crash)
+        async with lock_mgr.acquire_lock(session_11, sub_id, worker_id="crashed-worker-11") as lease:
+            assert lease.fencing_token == 11
+            # Sleep past lock duration to expire lease
+            await asyncio.sleep(0.5)
+            # Exit without normal release by setting owner_token to empty
+            lease.owner_token = "dead-worker"
+
+    # Worker 12 recovers stale lock
+    async with test_session_factory() as session_12:
+        async with lock_mgr.acquire_lock(session_12, sub_id, worker_id="recovery-worker-12") as lease_12:
+            assert lease_12.fencing_token == 12
+            assert lease_12.owner_token == "recovery-worker-12"
+
+    # Verify final database lock state
+    async with test_session_factory() as verify_session:
+        lock_row = (await verify_session.execute(
+            select(SubmissionProcessingLock).where(SubmissionProcessingLock.submission_id == sub_id)
+        )).scalars().first()
+        assert lock_row is not None
+        assert lock_row.fencing_token == 12
+        assert lock_row.locked_by is None  # released cleanly after worker-12
+
+
+@pytest.mark.asyncio
+async def test_multimodality_retry_identity_and_zero_claim_lifecycle(test_db_engine, db_session):
+    """
+    Section 3 Audit Test:
+    Verifies multi-modality retry identity across additions, removals, and modifications
+    of individual modalities, including composite hashing and zero-claim idempotency.
+    """
+    test_session_factory = async_sessionmaker(bind=test_db_engine, class_=AsyncSession, expire_on_commit=False)
+
+    inv = Investigation(title="Multi-Modality Retry Investigation", priority="HIGH")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        caption="Satellite image captured over the northern border.",
+        raw_text=None,
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    # Step 1: Initial extraction with Caption only (Modality = "CAPTION")
+    await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+    async with test_session_factory() as s:
+        runs = list((await s.execute(select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id))).scalars().all())
+        assert len(runs) == 1
+        assert runs[0].version == 1
+        assert runs[0].source_modality == "CAPTION"
+        assert runs[0].claims_produced == 1
+        assert runs[0].is_active is True
+
+    # Step 2: Idempotent retry with identical Caption (0 new runs, same version returned)
+    await pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+    async with test_session_factory() as s:
+        runs_retry = list((await s.execute(select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id))).scalars().all())
+        assert len(runs_retry) == 1
+        assert runs_retry[0].version == 1
+
+    # Step 3: OCR text is added to the submission -> invalidates retry cache, creates v2 with COMBINED[CAPTION+OCR_EXTRACTED]
+    async with test_session_factory() as s:
+        sub_record = (await s.execute(select(EvidenceSubmission).where(EvidenceSubmission.id == sub.id))).scalars().first()
+        await pipeline_service._extract_and_persist_claims(
+            s,
+            sub_record,
+            ocr_result={"text": "Military convoy moving toward Sector 4 at dawn."},
+            session_factory=test_session_factory
+        )
+
+    async with test_session_factory() as s:
+        runs_ocr = list((await s.execute(
+            select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id).order_by(ClaimExtractionRun.version)
+        )).scalars().all())
+        assert len(runs_ocr) == 2
+        assert runs_ocr[0].is_active is False
+        assert runs_ocr[1].is_active is True
+        assert runs_ocr[1].version == 2
+        assert runs_ocr[1].source_modality == "COMBINED[CAPTION+OCR_EXTRACTED]"
+        assert runs_ocr[1].claims_produced == 2
+
+    # Step 4: Audio transcript is added -> creates v3 with COMBINED[CAPTION+OCR_EXTRACTED+TRANSCRIPT]
+    async with test_session_factory() as s:
+        sub_record = (await s.execute(select(EvidenceSubmission).where(EvidenceSubmission.id == sub.id))).scalars().first()
+        await pipeline_service._extract_and_persist_claims(
+            s,
+            sub_record,
+            ocr_result={"text": "Military convoy moving toward Sector 4 at dawn."},
+            transcription_result={"transcript": "Officials confirmed the movement of three regiments."},
+            session_factory=test_session_factory
+        )
+
+    async with test_session_factory() as s:
+        runs_tr = list((await s.execute(
+            select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id).order_by(ClaimExtractionRun.version)
+        )).scalars().all())
+        assert len(runs_tr) == 3
+        assert runs_tr[2].is_active is True
+        assert runs_tr[2].version == 3
+        assert runs_tr[2].source_modality == "COMBINED[CAPTION+OCR_EXTRACTED+TRANSCRIPT]"
+        assert runs_tr[2].claims_produced == 3
+
+    # Step 5: Transcript is removed -> creates v4 with COMBINED[CAPTION+OCR_EXTRACTED]
+    async with test_session_factory() as s:
+        sub_record = (await s.execute(select(EvidenceSubmission).where(EvidenceSubmission.id == sub.id))).scalars().first()
+        await pipeline_service._extract_and_persist_claims(
+            s,
+            sub_record,
+            ocr_result={"text": "Military convoy moving toward Sector 4 at dawn."},
+            transcription_result=None,
+            session_factory=test_session_factory
+        )
+
+    async with test_session_factory() as s:
+        runs_rem = list((await s.execute(
+            select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub.id).order_by(ClaimExtractionRun.version)
+        )).scalars().all())
+        assert len(runs_rem) == 4
+        assert runs_rem[3].is_active is True
+        assert runs_rem[3].version == 4
+        assert runs_rem[3].source_modality == "COMBINED[CAPTION+OCR_EXTRACTED]"
+        assert runs_rem[3].claims_produced == 2
+
+    # Step 6: Multi-modality zero-claim lifecycle and invalidation
+    sub_zero = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        caption="Breaking news!",  # Non-factual
+        raw_text=None,
+        language="en"
+    )
+    db_session.add(sub_zero)
+    await db_session.commit()
+
+    # Initial zero-claim extraction with non-factual caption + non-factual OCR
+    async with test_session_factory() as s:
+        sub_z = (await s.execute(select(EvidenceSubmission).where(EvidenceSubmission.id == sub_zero.id))).scalars().first()
+        z_claims = await pipeline_service._extract_and_persist_claims(
+            s,
+            sub_z,
+            ocr_result={"text": "Urgent alert!"},  # Non-factual
+            session_factory=test_session_factory
+        )
+        assert len(z_claims) == 0
+
+    async with test_session_factory() as s:
+        z_runs = list((await s.execute(select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub_zero.id))).scalars().all())
+        assert len(z_runs) == 1
+        assert z_runs[0].claims_produced == 0
+        assert z_runs[0].status == "COMPLETED"
+        assert z_runs[0].is_active is True
+        assert z_runs[0].source_modality == "COMBINED[CAPTION+OCR_EXTRACTED]"
+
+    # Retry with same non-factual multi-modal text is idempotent (returns [] without creating run)
+    async with test_session_factory() as s:
+        sub_z = (await s.execute(select(EvidenceSubmission).where(EvidenceSubmission.id == sub_zero.id))).scalars().first()
+        z_retry = await pipeline_service._extract_and_persist_claims(
+            s,
+            sub_z,
+            ocr_result={"text": "Urgent alert!"},
+            session_factory=test_session_factory
+        )
+        assert len(z_retry) == 0
+
+    async with test_session_factory() as s:
+        z_runs_after = list((await s.execute(select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub_zero.id))).scalars().all())
+        assert len(z_runs_after) == 1
+
+    # Adding factual audio transcript invalidates zero-claim cache and creates v2
+    async with test_session_factory() as s:
+        sub_z = (await s.execute(select(EvidenceSubmission).where(EvidenceSubmission.id == sub_zero.id))).scalars().first()
+        z_factual = await pipeline_service._extract_and_persist_claims(
+            s,
+            sub_z,
+            ocr_result={"text": "Urgent alert!"},
+            transcription_result={"transcript": "The hurricane made landfall on the southern coast on Friday."},
+            session_factory=test_session_factory
+        )
+        assert len(z_factual) == 1
+        assert z_factual[0].claim_text == "The hurricane made landfall on the southern coast on Friday."
+
+    async with test_session_factory() as s:
+        z_final_runs = list((await s.execute(
+            select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub_zero.id).order_by(ClaimExtractionRun.version)
+        )).scalars().all())
+        assert len(z_final_runs) == 2
+        assert z_final_runs[0].is_active is False
+        assert z_final_runs[0].claims_produced == 0
+        assert z_final_runs[1].is_active is True
+        assert z_final_runs[1].claims_produced == 1
+        assert z_final_runs[1].version == 2
+        assert z_final_runs[1].source_modality == "COMBINED[CAPTION+OCR_EXTRACTED+TRANSCRIPT]"

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from contextlib import asynccontextmanager
-from sqlalchemy import select, delete
+from sqlalchemy import select, update, delete
 from sqlalchemy.exc import IntegrityError, OperationalError
 from app.models.claim import SubmissionProcessingLock
 
@@ -86,7 +86,7 @@ class SubmissionLockManager:
     async def verify_lease(self, session, lease: LockLease) -> bool:
         """
         Verifies whether the worker still holds the valid, unexpired, un-superseded lease.
-        Must be called prior to committing extraction results (fencing check).
+        Can be checked periodically prior to staging expensive database operations.
         """
         now = datetime.now(timezone.utc)
         result = await session.execute(
@@ -101,6 +101,91 @@ class SubmissionLockManager:
             return False
         row_expiry = _ensure_utc(lock_row.expires_at)
         return row_expiry >= now
+
+    async def release_lock(self, session, lease: LockLease) -> bool:
+        """
+        Safely releases the lock while PRESERVING the monotonic fencing token.
+        Sets locked_by = None and expires_at to past epoch, ensuring:
+        1. Subsequent acquisitions increment fencing_token monotonically from this persistent value.
+        2. Superseded workers cannot release a successor's lock (WHERE matches owner AND fencing_token).
+        """
+        try:
+            past = datetime(1970, 1, 1, tzinfo=timezone.utc)
+            res = await session.execute(
+                update(SubmissionProcessingLock)
+                .where(
+                    SubmissionProcessingLock.submission_id == lease.submission_id,
+                    SubmissionProcessingLock.locked_by == lease.owner_token,
+                    SubmissionProcessingLock.fencing_token == lease.fencing_token
+                )
+                .values(
+                    locked_by=None,
+                    expires_at=past
+                )
+            )
+            await session.commit()
+            return res.rowcount > 0
+        except Exception as rel_err:
+            logger.warning(f"Error releasing lock for submission {lease.submission_id} by {lease.owner_token}: {rel_err}")
+            return False
+
+    async def commit_with_fencing(self, session, lease: LockLease) -> None:
+        """
+        Executes an atomic fencing verification directly within the write transaction
+        prior to calling session.commit().
+        
+        Guarantees:
+        1. An atomic conditional check asserts owner_token, fencing_token, and unexpired TTL.
+        2. In SQLite WAL mode, executing this write asserts exclusive write reservation for this transaction.
+        3. If the lease was superseded by another worker (which acquired with higher fencing_token
+           or changed locked_by) or if the lease expired, rowcount == 0.
+        4. When rowcount == 0, session.rollback() is invoked immediately, discarding all staged mutations
+           (including deactivations of successor records and new uncommitted claims), and StaleLockException
+           is raised.
+        5. When rowcount == 1, session.commit() commits the extraction run, claims, and prior deactivations
+           atomically with lease verification.
+        """
+        now = datetime.now(timezone.utc)
+        
+        # Verify row exists and is unexpired with Python timezone discipline
+        res = await session.execute(
+            select(SubmissionProcessingLock).where(
+                SubmissionProcessingLock.submission_id == lease.submission_id,
+                SubmissionProcessingLock.locked_by == lease.owner_token,
+                SubmissionProcessingLock.fencing_token == lease.fencing_token
+            )
+        )
+        lock_row = res.scalars().first()
+        if not lock_row or not lease.is_active or _ensure_utc(lock_row.expires_at) < now:
+            lease.is_active = False
+            await session.rollback()
+            raise StaleLockException(
+                f"Worker {lease.owner_token} lost lock lease for submission {lease.submission_id} "
+                f"(fencing_token={lease.fencing_token}) prior to commit. "
+                f"Lock expired or was superseded. Write transaction rolled back."
+            )
+
+        # Atomic conditional update touching locked_at
+        touch_stmt = (
+            update(SubmissionProcessingLock)
+            .where(
+                SubmissionProcessingLock.submission_id == lease.submission_id,
+                SubmissionProcessingLock.locked_by == lease.owner_token,
+                SubmissionProcessingLock.fencing_token == lease.fencing_token
+            )
+            .values(locked_at=now)
+        )
+        touch_res = await session.execute(touch_stmt)
+        if touch_res.rowcount == 0:
+            lease.is_active = False
+            await session.rollback()
+            raise StaleLockException(
+                f"Worker {lease.owner_token} lost lock lease for submission {lease.submission_id} "
+                f"(fencing_token={lease.fencing_token}) prior to commit. "
+                f"Lock expired or was superseded. Write transaction rolled back."
+            )
+
+        await session.commit()
 
     @asynccontextmanager
     async def acquire_lock(
@@ -118,6 +203,7 @@ class SubmissionLockManager:
 
         while lease is None:
             now = datetime.now(timezone.utc)
+            expiry = now + timedelta(seconds=self.lock_duration_seconds)
             try:
                 # Query existing lock row for submission
                 res = await session.execute(
@@ -128,9 +214,8 @@ class SubmissionLockManager:
                 existing = res.scalars().first()
 
                 if existing is None:
-                    # Case 1: No lock exists -> acquire with fencing_token = 1
+                    # Case 1: First acquisition for this submission -> insert with fencing_token = 1
                     fencing_tok = 1
-                    expiry = now + timedelta(seconds=self.lock_duration_seconds)
                     new_lock = SubmissionProcessingLock(
                         submission_id=submission_id,
                         locked_by=worker,
@@ -154,25 +239,38 @@ class SubmissionLockManager:
 
                 else:
                     existing_expiry = _ensure_utc(existing.expires_at)
-                    if existing_expiry < now:
-                        # Case 2: Stale lock recovery -> superseded! Increment fencing_token monotonically
-                        fencing_tok = existing.fencing_token + 1
-                        expiry = now + timedelta(seconds=self.lock_duration_seconds)
-                        existing.locked_by = worker
-                        existing.fencing_token = fencing_tok
-                        existing.locked_at = now
-                        existing.expires_at = expiry
-                        try:
+                    is_lock_free = (existing.locked_by is None) or (existing_expiry < now)
+                    
+                    if is_lock_free:
+                        # Case 2: Available lock (either normally released or stale expired)
+                        # Atomic Compare-And-Swap: match existing.fencing_token to prevent race conditions
+                        target_fencing_tok = existing.fencing_token + 1
+                        stmt = (
+                            update(SubmissionProcessingLock)
+                            .where(
+                                SubmissionProcessingLock.submission_id == submission_id,
+                                SubmissionProcessingLock.fencing_token == existing.fencing_token
+                            )
+                            .values(
+                                locked_by=worker,
+                                fencing_token=target_fencing_tok,
+                                locked_at=now,
+                                expires_at=expiry
+                            )
+                        )
+                        claim_res = await session.execute(stmt)
+                        if claim_res.rowcount > 0:
                             await session.commit()
                             lease = LockLease(
                                 submission_id=submission_id,
                                 owner_token=worker,
-                                fencing_token=fencing_tok,
+                                fencing_token=target_fencing_tok,
                                 expires_at=expiry,
                                 is_active=True
                             )
                             break
-                        except OperationalError:
+                        else:
+                            # Raced with another worker whose CAS succeeded first
                             await session.rollback()
                     else:
                         # Case 3: Valid active lock held by another worker
@@ -220,17 +318,7 @@ class SubmissionLockManager:
                 except asyncio.CancelledError:
                     pass
 
-            # Safe release: only delete IF lock row still matches owner_token AND fencing_token
-            try:
-                await session.execute(
-                    delete(SubmissionProcessingLock).where(
-                        SubmissionProcessingLock.submission_id == lease.submission_id,
-                        SubmissionProcessingLock.locked_by == lease.owner_token,
-                        SubmissionProcessingLock.fencing_token == lease.fencing_token
-                    )
-                )
-                await session.commit()
-            except Exception as rel_err:
-                logger.warning(f"Error releasing lock for submission {submission_id} by {worker}: {rel_err}")
+            # Safe release: persist fencing token, set locked_by = None, expires_at = past
+            await self.release_lock(session, lease)
 
 submission_lock_manager = SubmissionLockManager()

@@ -276,6 +276,10 @@ class PipelineService:
                         reprocess_reason=reprocess_reason,
                         session_factory=factory
                     )
+                except StaleLockException as sle:
+                    logger.warning(f"Claim extraction worker superseded for submission {submission.id}: {sle}")
+                    await session.rollback()
+                    return False
                 except Exception as c_err:
                     logger.warning(f"Claim extraction non-fatal failure for submission {submission.id}: {c_err}")
 
@@ -382,7 +386,11 @@ class PipelineService:
             composite_text = "||".join(f"{mod}:{txt}" for mod, txt in sorted_modalities)
             composite_hash = hashlib.sha256(composite_text.encode("utf-8")).hexdigest()
             current_hashes = {hashlib.sha256(text.encode("utf-8")).hexdigest() for _, text in text_modalities}
-            primary_modality = "COMBINED" if len(text_modalities) > 1 else text_modalities[0][0]
+            if len(text_modalities) > 1:
+                mod_names = "+".join(m[0] for m in sorted_modalities)
+                primary_modality = f"COMBINED[{mod_names}]"
+            else:
+                primary_modality = text_modalities[0][0]
         else:
             # Handles empty or whitespace-only inputs if permitted by ingestion layer
             raw_content = (submission.caption or "") + (submission.raw_text or "")
@@ -416,7 +424,13 @@ class PipelineService:
             # Verify ALL identity attributes: submission ID, source hash, modality, extractor name, extractor version
             is_same_sub = (active_run.evidence_submission_id == sub_id) if active_run else False
             is_same_hash = (active_run.source_text_hash == composite_hash) if active_run else False
-            is_same_modality = (active_run.source_modality == primary_modality) if active_run else False
+            is_same_modality = False
+            if active_run:
+                if active_run.source_modality == primary_modality:
+                    is_same_modality = True
+                elif active_run.source_modality == "COMBINED" and primary_modality.startswith("COMBINED"):
+                    is_same_modality = True
+
             is_same_extractor = (active_run.extractor_name == current_extractor_name) if active_run else False
             is_same_version = (active_run.extractor_version == current_extractor_version) if active_run else False
 
@@ -496,7 +510,7 @@ class PipelineService:
                     completed_at=datetime.now(timezone.utc)
                 )
                 session.add(failed_run)
-                await session.flush()
+                await session.commit()
                 raise extract_err
 
             # Pre-commit Fencing Verification: ensure this worker still holds the valid lease
@@ -538,6 +552,9 @@ class PipelineService:
 
             if claims_to_add or prior_claims or prior_runs:
                 await session.flush()
+
+            # Atomic commit with fencing verification directly within the write transaction
+            await submission_lock_manager.commit_with_fencing(session, lease)
 
             return claims_to_add
 
