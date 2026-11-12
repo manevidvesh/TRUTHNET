@@ -9,11 +9,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Core Architecture & Evidence Intake (INTK)
 
-- [ ] **INTK-01**: User can create, list, and switch between investigations with persistent SQLite storage.
-- [ ] **INTK-02**: User can submit multimodal evidence items (plain text, image files, audio files, video files, public URLs) to an investigation.
-- [ ] **INTK-03**: System computes and stores SHA-256 hash, MIME type, original filename, and byte size immediately upon intake.
-- [ ] **INTK-04**: System records submission context (claimed event, claimed date, claimed location, caption, source URL, language).
-- [ ] **INTK-05**: System allows individual evidence items to process or fail independently without blocking the investigation.
+- [x] **INTK-01**: User can create, list, and switch between investigations with persistent SQLite storage.
+- [x] **INTK-02**: User can submit multimodal evidence items (plain text, image files, audio files, video files, public URLs) to an investigation.
+- [x] **INTK-03**: System computes and stores SHA-256 hash, MIME type, original filename, and byte size immediately upon intake.
+- [x] **INTK-04**: System records submission context (claimed event, claimed date, claimed location, caption, source URL, language).
+- [x] **INTK-05**: System allows individual evidence items to process or fail independently without blocking the investigation.
 
 ### Media Extraction & Technical Preprocessing (EXTR)
 
@@ -142,11 +142,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTK-01 | Phase 1 | Pending |
-| INTK-02 | Phase 1 | Pending |
-| INTK-03 | Phase 1 | Pending |
-| INTK-04 | Phase 1 | Pending |
-| INTK-05 | Phase 1 | Pending |
+| INTK-01 | Phase 1 | Complete |
+| INTK-02 | Phase 1 | Complete |
+| INTK-03 | Phase 1 | Complete |
+| INTK-04 | Phase 1 | Complete |
+| INTK-05 | Phase 1 | Complete |
 | EXTR-01 | Phase 2 | Pending |
 | EXTR-02 | Phase 2 | Pending |
 | EXTR-03 | Phase 2 | Pending |

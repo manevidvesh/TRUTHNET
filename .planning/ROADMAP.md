@@ -10,7 +10,7 @@ TRUTHNET AI is built in 12 focused phases delivering a complete multimodal misin
 - Integer phases (1, 2, 3...): Planned milestone work
 - Decimal phases (2.1, 2.2...): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Foundation & Vertical Slice Intake Pipeline** - Establish modular monolith architecture, SQLite schema, investigation CRUD, and multimodal evidence intake.
+- [x] **Phase 1: Foundation & Vertical Slice Intake Pipeline** - Establish modular monolith architecture, SQLite schema, investigation CRUD, and multimodal evidence intake.
 - [ ] **Phase 2: Multimodal Extraction & Media Preprocessing** - Extract technical metadata, OCR, speech transcripts, and video keyframes strictly as Observed Data.
 - [ ] **Phase 3: Persistent Historical Media Indexing & Perceptual Hashing** - Implement local perceptual index, MediaAsset vs EvidenceSubmission decoupling, and 6-level match classification.
 - [ ] **Phase 4: Historical vs Current Contextual Verification Engine** - Build automated contextual comparison diffing claimed vs historical event, date, location, and attribution.
@@ -37,9 +37,9 @@ TRUTHNET AI is built in 12 focused phases delivering a complete multimodal misin
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Foundation, SQLite WAL Database Setup, and Investigation Lifecycle
-- [ ] 01-02: Storage Engine, MediaAsset/EvidenceSubmission Decoupling, and Streaming Multimodal Intake
-- [ ] 01-03: Asynchronous Processing Pipeline, Fault Isolation, and Duplicate File Resilience
+- [x] 01-01: Foundation, SQLite WAL Database Setup, and Investigation Lifecycle
+- [x] 01-02: Storage Engine, MediaAsset/EvidenceSubmission Decoupling, and Streaming Multimodal Intake
+- [x] 01-03: Asynchronous Processing Pipeline, Fault Isolation, and Duplicate File Resilience
 
 ### Phase 2: Multimodal Extraction & Media Preprocessing
 **Goal**: Implement technical metadata extraction, OCR, speech-to-text transcription, and video keyframe sampling.
@@ -175,7 +175,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Vertical Slice Intake Pipeline | 0/3 | In progress | - |
+| 1. Foundation & Vertical Slice Intake Pipeline | 3/3 | Complete | 2026-11-13 |
 | 2. Multimodal Extraction & Media Preprocessing | 0/TBD | Not started | - |
 | 3. Persistent Historical Media Indexing & Perceptual Hashing | 0/TBD | Not started | - |
 | 4. Historical vs Current Contextual Verification Engine | 0/TBD | Not started | - |
