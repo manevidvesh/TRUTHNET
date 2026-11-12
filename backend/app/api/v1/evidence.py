@@ -1,17 +1,20 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.storage import storage_manager
 from app.models.investigation import Investigation
-from app.models.evidence import EvidenceSubmission, MediaAsset
+from app.models.evidence import EvidenceSubmission, MediaAsset, ExtractionRecord, DerivedArtifact
 from app.schemas.evidence import (
     EvidenceSubmissionResponse,
     EvidenceClaimCreate,
     EvidenceStatusResponse,
-    MediaAssetResponse
+    MediaAssetResponse,
+    ExtractionRecordResponse,
+    DerivedArtifactResponse
 )
 from app.services.pipeline import pipeline_service
 
@@ -254,3 +257,113 @@ async def retry_evidence_processing(
         error_message=sub.error_message,
         created_at=sub.created_at
     )
+
+@router.get("/{evidence_id}/extracted", response_model=ExtractionRecordResponse)
+async def get_extracted_evidence_data(
+    investigation_id: str,
+    evidence_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    # Verify evidence belongs to investigation
+    ev_res = await db.execute(
+        select(EvidenceSubmission).where(
+            EvidenceSubmission.investigation_id == investigation_id,
+            EvidenceSubmission.id == evidence_id
+        )
+    )
+    evidence = ev_res.scalars().first()
+    if not evidence:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence submission not found")
+
+    rec_res = await db.execute(
+        select(ExtractionRecord).where(
+            ExtractionRecord.evidence_submission_id == evidence_id,
+            ExtractionRecord.is_active == True
+        ).order_by(ExtractionRecord.version.desc())
+    )
+    record = rec_res.scalars().first()
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Extraction record not yet available or processing pending"
+        )
+    return ExtractionRecordResponse.model_validate(record)
+
+@router.get("/{evidence_id}/artifacts", response_model=List[DerivedArtifactResponse])
+async def list_derived_artifacts(
+    investigation_id: str,
+    evidence_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    ev_res = await db.execute(
+        select(EvidenceSubmission).where(
+            EvidenceSubmission.investigation_id == investigation_id,
+            EvidenceSubmission.id == evidence_id
+        )
+    )
+    evidence = ev_res.scalars().first()
+    if not evidence:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence submission not found")
+
+    art_res = await db.execute(
+        select(DerivedArtifact).where(
+            DerivedArtifact.evidence_submission_id == evidence_id
+        ).order_by(DerivedArtifact.created_at.asc())
+    )
+    artifacts = art_res.scalars().all()
+    
+    responses = []
+    for art in artifacts:
+        dl_url = f"/api/v1/investigations/{investigation_id}/evidence/{evidence_id}/artifacts/{art.id}/content"
+        responses.append(
+            DerivedArtifactResponse(
+                id=art.id,
+                evidence_submission_id=art.evidence_submission_id,
+                artifact_type=art.artifact_type,
+                sha256_hash=art.sha256_hash,
+                file_size_bytes=art.file_size_bytes,
+                mime_type=art.mime_type,
+                artifact_metadata=art.artifact_metadata,
+                download_url=dl_url,
+                created_at=art.created_at
+            )
+        )
+    return responses
+
+@router.get("/{evidence_id}/artifacts/{artifact_id}/content")
+async def get_derived_artifact_content(
+    investigation_id: str,
+    evidence_id: str,
+    artifact_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    ev_res = await db.execute(
+        select(EvidenceSubmission).where(
+            EvidenceSubmission.investigation_id == investigation_id,
+            EvidenceSubmission.id == evidence_id
+        )
+    )
+    evidence = ev_res.scalars().first()
+    if not evidence:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence submission not found")
+
+    art_res = await db.execute(
+        select(DerivedArtifact).where(
+            DerivedArtifact.id == artifact_id,
+            DerivedArtifact.evidence_submission_id == evidence_id
+        )
+    )
+    artifact = art_res.scalars().first()
+    if not artifact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Derived artifact not found")
+
+    safe_path = storage_manager.resolve_safe_path(artifact.relative_path)
+    if not safe_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file missing on disk")
+
+    return FileResponse(
+        path=safe_path,
+        media_type=artifact.mime_type,
+        filename=safe_path.name
+    )
+

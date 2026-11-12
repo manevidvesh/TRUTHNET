@@ -49,3 +49,38 @@ class EvidenceStatusResponse(BaseModel):
     processing_status: str
     error_message: str | None = None
     created_at: datetime
+
+class DerivedArtifactResponse(BaseModel):
+    id: str
+    evidence_submission_id: str
+    artifact_type: str
+    sha256_hash: str
+    file_size_bytes: int
+    mime_type: str
+    artifact_metadata: dict | None = None
+    download_url: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ExtractionRecordResponse(BaseModel):
+    id: str
+    evidence_submission_id: str
+    version: int
+    is_active: bool
+    category: str = "OBSERVED_DATA"
+    extractor_name: str
+    extractor_version: str
+    execution_timestamp: datetime
+    status: str
+    modality_statuses: dict | None = None
+    technical_metadata: dict | None = None
+    video_frames: list[dict] | None = None
+    ocr_result: dict | None = None
+    transcription_result: dict | None = None
+    derived_artifact_ids: list[str] | None = None
+    error_message: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+

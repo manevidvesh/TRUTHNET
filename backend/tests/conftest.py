@@ -49,6 +49,18 @@ async def test_db_engine():
     Path(temp_db_path).unlink(missing_ok=True)
 
 @pytest_asyncio.fixture(scope="function")
+async def db_session(test_db_engine):
+    session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+    async with session_factory() as session:
+        yield session
+
+@pytest_asyncio.fixture(scope="function")
 async def async_client(test_db_engine):
     test_session_factory = async_sessionmaker(
         bind=test_db_engine,
