@@ -3,12 +3,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import init_db
+from app.services.pipeline import pipeline_service
 from app.api.v1 import api_v1_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: ensure tables created
+    # Startup: ensure database and tables created
     await init_db()
+    # Recover any stranded jobs from prior process crash/restart
+    await pipeline_service.recover_pending_jobs()
     yield
     # Shutdown
 

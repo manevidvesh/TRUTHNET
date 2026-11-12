@@ -50,7 +50,7 @@ async def upload_evidence_file(
     sha256_hash, mime_type, file_size, rel_path = await storage_manager.save_upload_stream(file)
     submission_type = get_submission_type(mime_type)
 
-    # Find or create MediaAsset (Deduplication!)
+    # Find or create MediaAsset (Deduplication within single atomic transaction)
     asset_res = await db.execute(select(MediaAsset).where(MediaAsset.sha256_hash == sha256_hash))
     asset = asset_res.scalars().first()
     if not asset:
@@ -61,8 +61,7 @@ async def upload_evidence_file(
             file_size_bytes=file_size
         )
         db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
+        await db.flush()  # Flush to generate asset.id without committing prematurely
 
     # Create distinct EvidenceSubmission
     submission = EvidenceSubmission(
@@ -136,8 +135,7 @@ async def submit_evidence_claim(
                 file_size_bytes=file_size
             )
             db.add(asset)
-            await db.commit()
-            await db.refresh(asset)
+            await db.flush()
         media_asset_id = asset.id
         media_asset_response = MediaAssetResponse.model_validate(asset)
     else:
@@ -218,6 +216,37 @@ async def get_evidence_status(
     if not sub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence submission not found")
     
+    return EvidenceStatusResponse(
+        evidence_id=sub.id,
+        investigation_id=sub.investigation_id,
+        processing_status=sub.processing_status,
+        error_message=sub.error_message,
+        created_at=sub.created_at
+    )
+
+@router.post("/{evidence_id}/retry", response_model=EvidenceStatusResponse)
+async def retry_evidence_processing(
+    investigation_id: str,
+    evidence_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(EvidenceSubmission).where(
+            EvidenceSubmission.investigation_id == investigation_id,
+            EvidenceSubmission.id == evidence_id
+        )
+    )
+    sub = result.scalars().first()
+    if not sub:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence submission not found")
+
+    sub.processing_status = "PENDING"
+    sub.error_message = None
+    await db.commit()
+
+    background_tasks.add_task(pipeline_service.process_evidence_item, sub.id)
+
     return EvidenceStatusResponse(
         evidence_id=sub.id,
         investigation_id=sub.investigation_id,

@@ -1,9 +1,10 @@
 import logging
 from pathlib import Path
-import httpx
+from typing import List
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import async_session_factory
+from app.core.security import safe_url_head_or_get
 from app.models.evidence import EvidenceSubmission, MediaAsset
 
 logger = logging.getLogger(__name__)
@@ -55,14 +56,10 @@ class PipelineService:
                     if not submission.source_url:
                         raise ValueError("No source URL provided for URL submission")
                     
-                    # Validate URL reachability safely with short timeout
-                    async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
-                        response = await client.head(submission.source_url)
-                        if response.status_code >= 400:
-                            # Try GET in case HEAD is disallowed
-                            response = await client.get(submission.source_url)
-                            if response.status_code >= 400:
-                                raise ValueError(f"URL returned HTTP error status {response.status_code}")
+                    # Validate URL reachability and guard against SSRF
+                    is_reachable, status_code, err_msg = await safe_url_head_or_get(submission.source_url)
+                    if not is_reachable:
+                        raise ValueError(err_msg)
 
                 elif submission.submission_type == "TEXT":
                     if not submission.raw_text and not submission.caption:
@@ -77,7 +74,6 @@ class PipelineService:
             except Exception as e:
                 logger.warning(f"Fault isolation caught error for evidence {evidence_id}: {str(e)}")
                 try:
-                    # Update status to FAILED and record error message
                     result = await session.execute(
                         select(EvidenceSubmission).where(EvidenceSubmission.id == evidence_id)
                     )
@@ -89,5 +85,29 @@ class PipelineService:
                 except Exception as db_err:
                     logger.error(f"Failed to record error state for {evidence_id}: {db_err}")
                 return False
+
+    async def recover_pending_jobs(self, session_factory=None) -> int:
+        """
+        Scans for stranded PENDING or PROCESSING submissions across application restarts.
+        Processes them to restore consistent pipeline state.
+        Returns count of recovered jobs.
+        """
+        factory = session_factory or self.session_factory or async_session_factory
+        stranded_ids: List[str] = []
+
+        async with factory() as session:
+            result = await session.execute(
+                select(EvidenceSubmission.id).where(
+                    EvidenceSubmission.processing_status.in_(["PENDING", "PROCESSING"])
+                )
+            )
+            stranded_ids = list(result.scalars().all())
+
+        if stranded_ids:
+            logger.info(f"Recovering {len(stranded_ids)} stranded evidence processing jobs after restart...")
+            for eid in stranded_ids:
+                await self.process_evidence_item(eid, session_factory=factory)
+
+        return len(stranded_ids)
 
 pipeline_service = PipelineService()
