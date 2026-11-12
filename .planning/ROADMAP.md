@@ -11,7 +11,7 @@ TRUTHNET AI is built in 12 focused phases delivering a complete multimodal misin
 - Decimal phases (2.1, 2.2...): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Foundation & Vertical Slice Intake Pipeline** - Establish modular monolith architecture, SQLite schema, investigation CRUD, and multimodal evidence intake.
-- [ ] **Phase 2: Multimodal Extraction & Media Preprocessing** - Extract technical metadata, OCR, speech transcripts, and video keyframes strictly as Observed Data.
+- [x] **Phase 2: Multimodal Extraction & Media Preprocessing** - Extract technical metadata, OCR, speech transcripts, and video keyframes strictly as Observed Data.
 - [ ] **Phase 3: Persistent Historical Media Indexing & Perceptual Hashing** - Implement local perceptual index, MediaAsset vs EvidenceSubmission decoupling, and 6-level match classification.
 - [ ] **Phase 4: Historical vs Current Contextual Verification Engine** - Build automated contextual comparison diffing claimed vs historical event, date, location, and attribution.
 - [ ] **Phase 5: Media Authenticity & Deepfake Model Detection Engine** - Build auditable Model Registry, real detector inference, facial anomaly analysis, and explicit unavailable reporting.
@@ -51,7 +51,12 @@ Plans:
   2. Audio and video files produce time-aligned speech transcripts via local speech-to-text.
   3. Video files are decomposed into sampled keyframes with timestamps using OpenCV/FFmpeg.
   4. All extracted outputs are strictly tagged as "Observed Data" distinct from inferences.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [x] 02-01: Versioned Extraction Schema, EXIF Timezone Discipline, and Artifact Security
+- [x] 02-02: Boundary-Anchored Video Keyframes, PyAV Audio Demuxing, and Artifact Provenance
+- [x] 02-03: Dual-Engine OCR, faster-whisper Speech Transcription, and Pipeline Integration
 
 ### Phase 3: Persistent Historical Media Indexing & Perceptual Hashing
 **Goal**: Implement the persistent local historical media index, perceptual hashing (pHash/dHash), and MediaAsset vs EvidenceSubmission decoupling.
