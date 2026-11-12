@@ -20,6 +20,58 @@ class GeometricVerifier:
     DEFAULT_LOWE_RATIO = 0.75
     DEFAULT_RANSAC_REPROJ_THRESH = 5.0
 
+    @staticmethod
+    def validate_homography(
+        H: Optional[np.ndarray],
+        src_inliers: np.ndarray,
+        dst_inliers: np.ndarray
+    ) -> Tuple[bool, str]:
+        """
+        Validates mathematical non-degeneracy of estimated projective homography matrix.
+        Rejects inverted orientations (det <= 0), singular collapses (cond > 1e4),
+        extreme scale distortion, and collinear inliers spanning < 15px.
+        """
+        if H is None or np.isnan(H).any() or np.isinf(H).any():
+            return False, "Homography matrix contains NaN or Inf values"
+
+        # Normalize matrix so H[2, 2] == 1.0
+        if abs(H[2, 2]) < 1e-8:
+            return False, "Degenerate projective scale (H[2, 2] near zero)"
+        H_norm = H / H[2, 2]
+
+        A = H_norm[:2, :2]
+        det = float(np.linalg.det(A))
+        if det <= 0.0:
+            return False, f"Degenerate orientation reflection (det(A)={det:.4f} <= 0)"
+
+        if det < 0.005 or det > 200.0:
+            return False, f"Extreme projective scale distortion (det(A)={det:.4f})"
+
+        try:
+            cond = float(np.linalg.cond(A))
+            if cond > 50.0 or np.isinf(cond) or np.isnan(cond):
+                return False, f"Ill-conditioned singular affine submatrix (cond(A)={cond:.1f} > 50)"
+        except Exception as e:
+            return False, f"Condition number computation failed: {e}"
+
+        # Inlier spatial dispersion check (prevent 1D line of inliers faking 2D homography)
+        if len(src_inliers) < 4:
+            return False, "Fewer than 4 inliers for homography"
+
+        src_pts = src_inliers.reshape(-1, 2)
+        src_w = float(np.ptp(src_pts[:, 0]))
+        src_h = float(np.ptp(src_pts[:, 1]))
+        if src_w < 15.0 or src_h < 15.0:
+            return False, f"Collinear or collapsed inliers in query media (w={src_w:.1f}px, h={src_h:.1f}px)"
+
+        dst_pts = dst_inliers.reshape(-1, 2)
+        dst_w = float(np.ptp(dst_pts[:, 0]))
+        dst_h = float(np.ptp(dst_pts[:, 1]))
+        if dst_w < 15.0 or dst_h < 15.0:
+            return False, f"Collinear or collapsed inliers in candidate media (w={dst_w:.1f}px, h={dst_h:.1f}px)"
+
+        return True, "Valid projective planar transformation"
+
     def verify_geometry(
         self,
         query_pts: Optional[np.ndarray],
@@ -103,10 +155,24 @@ class GeometricVerifier:
             result["inlier_ratio"] = inlier_ratio
             result["homography_matrix"] = H.tolist()
 
+            # Extract inlier subsets for validation
+            inlier_mask = mask.ravel().astype(bool)
+            src_inliers = src_pts[inlier_mask]
+            dst_inliers = dst_pts[inlier_mask]
+
+            is_valid_H, h_reason = self.validate_homography(H, src_inliers, dst_inliers)
+            result["homography_valid"] = is_valid_H
+            result["homography_validation_reason"] = h_reason
+
             # 5. Evaluate geometric match thresholds
             if inliers >= min_inliers and inlier_ratio >= min_inlier_ratio:
-                result["status"] = "GEOMETRIC_MATCH_CONFIRMED"
-                result["is_geometric_match"] = True
+                if is_valid_H:
+                    result["status"] = "GEOMETRIC_MATCH_CONFIRMED"
+                    result["is_geometric_match"] = True
+                else:
+                    result["status"] = "GEOMETRIC_TRANSFORMATION_REJECTED"
+                    result["is_geometric_match"] = False
+                    result["failure_reason"] = f"Homography rejected: {h_reason}"
             else:
                 result["status"] = "GEOMETRIC_TRANSFORMATION_REJECTED"
                 result["is_geometric_match"] = False

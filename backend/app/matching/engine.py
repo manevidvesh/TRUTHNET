@@ -207,7 +207,9 @@ class MatchEngine:
                     f"Geometric frame correspondence at {cand.get('frame_timestamp_ms', 0)}ms. "
                     f"Does not establish whole-video identity."
                     if is_vf else
-                    "Geometric projective correspondence indicates this media is an edited, cropped, or transformed variant of the exact same photograph."
+                    "Projective geometric correspondence confirmed across feature points. "
+                    "Consistent with an edited, cropped, or transformed variant of the same underlying image capture, "
+                    "or identical planar subject. Does not establish or infer event identity, location, date, or source provenance."
                 )
                 rec = MediaMatchRecord(
                     source_evidence_id=submission.id,
@@ -222,8 +224,8 @@ class MatchEngine:
                     consecutive_frames_matched=consec_frames,
                     raw_metrics=combined_metrics,
                     classification_rationale=(
-                        f"RANSAC homography confirmed with {geom_res['inlier_count']} inliers "
-                        f"and inlier ratio {geom_res['inlier_ratio']}."
+                        f"RANSAC homography confirmed with {geom_res['inlier_count']} inliers, "
+                        f"inlier ratio {geom_res['inlier_ratio']}, and non-degenerate projective matrix."
                     ),
                     disclaimer=disclaimer_text
                 )

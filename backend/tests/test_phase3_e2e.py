@@ -89,8 +89,9 @@ async def test_cross_investigation_privacy_isolation(async_client: AsyncClient, 
     top_match = matches[0]
     assert top_match["classification"] in ("SAME_PHOTOGRAPH_MODIFIED", "NEAR_DUPLICATE")
     assert top_match["scope"] == "GLOBAL_INDEX_ANONYMIZED"
+    assert top_match["matched_artifact_id"] is None, "LEAK: Foreign artifact ID exposed in anonymized match!"
 
-    # 4. Strict Privacy Audit Assertion: Zero leakage of Inv 1 metadata
+    # 4. Strict Privacy Audit Assertion: Zero leakage of Inv 1 metadata or server paths
     payload_str = match_resp.text
     assert "Top Secret Case" not in payload_str, "LEAK: Investigation 1 title exposed!"
     assert "Classified Operation Blackout" not in payload_str, "LEAK: Investigation 1 secret title exposed!"
@@ -98,6 +99,9 @@ async def test_cross_investigation_privacy_isolation(async_client: AsyncClient, 
     assert "Sensitive intelligence notes" not in payload_str, "LEAK: Private notes exposed!"
     assert inv1_id not in payload_str, "LEAK: Foreign investigation ID exposed!"
     assert ev1_id not in payload_str, "LEAK: Foreign evidence ID exposed!"
+    assert "descriptor_rel_path" not in payload_str, "LEAK: Internal server descriptor storage path exposed!"
+    assert "derived/" not in payload_str, "LEAK: Internal derived filesystem directory exposed!"
+    assert "uploads/" not in payload_str, "LEAK: Internal upload filesystem directory exposed!"
 
     # 5. Query matches via GET endpoint and verify identical privacy guarantee
     get_resp = await async_client.get(
