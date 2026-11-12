@@ -39,6 +39,11 @@ data/*.db*
 **/data/*.db*
 data/uploads/*
 **/data/uploads/*
+data/derived/*
+**/data/derived/*
+data/models/*
+**/data/models/*
+backend/data/
 !data/uploads/.gitkeep
 !**/data/uploads/.gitkeep
 !data/.gitkeep
