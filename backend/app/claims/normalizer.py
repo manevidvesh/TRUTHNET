@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 
 # Gazetteer reference coordinates for prominent geopolitical locations
@@ -40,9 +41,9 @@ _RELATIVE_DATE_RE = re.compile(
     re.IGNORECASE
 )
 
-# Quantity and Currency regex
+# Quantity and Currency regex (including Indian rupee symbol ₹ and crore/lakh)
 _QUANTITY_RE = re.compile(
-    r"\b(?:\$|₹|€|£)?\s*\d+(?:[.,]\d+)?\s*(?:crore|lakh|million|billion|trillion|percent|%|people|dead|injured|killed|cases|rupees|dollars)?\b",
+    r"(?:[\$₹€£]\s*)?\b\d+(?:[.,]\d+)?\s*(?:crore|lakh|million|billion|trillion|percent|%|people|dead|injured|killed|cases|rupees|dollars)?\b",
     re.IGNORECASE
 )
 
@@ -78,10 +79,11 @@ class ClaimNormalizer:
         return cleaned
 
     @staticmethod
-    def parse_entities(text: str) -> Dict[str, List[Dict[str, Any]]]:
+    def parse_entities(text: str, reference_timestamp: Optional[datetime] = None) -> Dict[str, List[Dict[str, Any]]]:
         """
         Extracts entity candidates (persons, organizations, locations, dates, quantities)
         with exact character spans in the provided text.
+        Relative dates are NEVER converted to absolute dates without a verified reference timestamp and timezone.
         """
         entities: Dict[str, List[Dict[str, Any]]] = {
             "persons": [],
@@ -118,12 +120,33 @@ class ClaimNormalizer:
                 "span": [m.start(), m.end()]
             })
 
-        # C. Relative dates
+        # C. Relative dates (e.g. yesterday, last week)
         for m in _RELATIVE_DATE_RE.finditer(text):
+            raw_match = m.group(0)
+            raw_lower = raw_match.lower()
+            normalized_date = None
+            is_anchored = False
+
+            # Only attempt relative date anchoring if reference_timestamp is valid and timezone-aware
+            if reference_timestamp and reference_timestamp.tzinfo is not None:
+                if "yesterday" in raw_lower:
+                    dt = reference_timestamp - timedelta(days=1)
+                    normalized_date = dt.strftime("%Y-%m-%d")
+                    is_anchored = True
+                elif "today" in raw_lower:
+                    normalized_date = reference_timestamp.strftime("%Y-%m-%d")
+                    is_anchored = True
+                elif "two days ago" in raw_lower:
+                    dt = reference_timestamp - timedelta(days=2)
+                    normalized_date = dt.strftime("%Y-%m-%d")
+                    is_anchored = True
+
             entities["dates"].append({
-                "raw": m.group(0),
-                "normalized": m.group(0).lower(),
-                "type": "RELATIVE_DATE",
+                "raw": raw_match,
+                "normalized": normalized_date,
+                "type": "RELATIVE_DATE" if is_anchored else "RELATIVE_DATE_UNRESOLVED",
+                "is_anchored": is_anchored,
+                "caveat": "Relative date anchored using submission intake timestamp" if is_anchored else "Relative date cannot be anchored without an explicit submission timestamp and timezone.",
                 "span": [m.start(), m.end()]
             })
 
@@ -141,16 +164,17 @@ class ClaimNormalizer:
                 })
 
         # 2. Locations
-        text_lower = text.lower()
         for loc_name, coords in KNOWN_LOCATION_CENTROIDS.items():
             pattern = re.compile(rf"\b{re.escape(loc_name)}\b", re.IGNORECASE)
             for m in pattern.finditer(text):
                 entities["locations"].append({
                     "raw": text[m.start():m.end()],
+                    "mentioned_location": loc_name.title(),
                     "canonical_name": loc_name.title(),
-                    "centroid_lat": coords[0],
-                    "centroid_lon": coords[1],
+                    "reference_centroid_lat": coords[0],
+                    "reference_centroid_lon": coords[1],
                     "is_reference_centroid": True,
+                    "centroid_caveat": "Centroid coordinate represents general municipal center, NOT incident or crime scene location",
                     "span": [m.start(), m.end()]
                 })
 
@@ -176,10 +200,11 @@ class ClaimNormalizer:
             # Ignore plain 4-digit years already caught as dates
             if re.match(r"^(?:19|20)\d{2}$", s):
                 continue
-            entities["quantities"].append({
-                "raw": s,
-                "span": [m.start(), m.end()]
-            })
+            if len(s) > 1:
+                entities["quantities"].append({
+                    "raw": s,
+                    "span": [m.start(), m.end()]
+                })
 
         return entities
 

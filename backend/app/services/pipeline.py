@@ -319,8 +319,22 @@ class PipelineService:
         """
         Extracts factual claim propositions across available text modalities
         (caption, raw_text, OCR text, and speech transcripts) and persists ClaimRecords.
+        Enforces idempotency and historical versioning: marks prior claims as inactive
+        without deleting historical audit records.
         """
+        # Query existing claims for this submission to establish extraction versioning
+        prior_claims_res = await session.execute(
+            select(ClaimRecord).where(ClaimRecord.evidence_submission_id == submission.id)
+        )
+        prior_claims = list(prior_claims_res.scalars().all())
+        next_claim_version = max([c.version for c in prior_claims], default=0) + 1
+
+        # Deactivate prior claims for this submission (preserving historical audit trace)
+        for pc in prior_claims:
+            pc.is_active = False
+
         claims_to_add: List[ClaimRecord] = []
+        ref_timestamp = submission.created_at
 
         # 1. Caption text
         if submission.caption and submission.caption.strip():
@@ -328,7 +342,9 @@ class PipelineService:
                 source_text=submission.caption,
                 investigation_id=submission.investigation_id,
                 evidence_submission_id=submission.id,
-                source_modality="CAPTION"
+                source_modality="CAPTION",
+                reference_timestamp=ref_timestamp,
+                extraction_version=next_claim_version
             )
             for c_data in caption_claims:
                 claims_to_add.append(ClaimRecord(**c_data))
@@ -339,7 +355,9 @@ class PipelineService:
                 source_text=submission.raw_text,
                 investigation_id=submission.investigation_id,
                 evidence_submission_id=submission.id,
-                source_modality="RAW_TEXT"
+                source_modality="RAW_TEXT",
+                reference_timestamp=ref_timestamp,
+                extraction_version=next_claim_version
             )
             for c_data in raw_text_claims:
                 claims_to_add.append(ClaimRecord(**c_data))
@@ -352,7 +370,9 @@ class PipelineService:
                     source_text=ocr_text,
                     investigation_id=submission.investigation_id,
                     evidence_submission_id=submission.id,
-                    source_modality="OCR_EXTRACTED"
+                    source_modality="OCR_EXTRACTED",
+                    reference_timestamp=ref_timestamp,
+                    extraction_version=next_claim_version
                 )
                 for c_data in ocr_claims:
                     claims_to_add.append(ClaimRecord(**c_data))
@@ -365,7 +385,9 @@ class PipelineService:
                     source_text=transcript_text,
                     investigation_id=submission.investigation_id,
                     evidence_submission_id=submission.id,
-                    source_modality="TRANSCRIPT"
+                    source_modality="TRANSCRIPT",
+                    reference_timestamp=ref_timestamp,
+                    extraction_version=next_claim_version
                 )
                 for c_data in transcript_claims:
                     claims_to_add.append(ClaimRecord(**c_data))
@@ -373,7 +395,7 @@ class PipelineService:
         for rec in claims_to_add:
             session.add(rec)
 
-        if claims_to_add:
+        if claims_to_add or prior_claims:
             await session.flush()
 
         return claims_to_add

@@ -10,12 +10,27 @@ class ExtractionState(str, Enum):
     UNRESOLVED_STATEMENT = "UNRESOLVED_STATEMENT"
     NON_FACTUAL_STATEMENT = "NON_FACTUAL_STATEMENT"
 
+class PolarityState(str, Enum):
+    RESOLVED_AFFIRMATIVE = "RESOLVED_AFFIRMATIVE"
+    RESOLVED_NEGATIVE = "RESOLVED_NEGATIVE"
+    UNRESOLVED_POLARITY = "UNRESOLVED_POLARITY"
+
 class ClaimBase(BaseModel):
     claim_text: str = Field(..., description="Verbatim extracted sentence or proposition from source text")
     normalized_claim: str = Field(..., description="Normalized representation of the claim")
+    version: int = Field(default=1, description="Extraction version for idempotency")
+    is_active: bool = Field(default=True, description="True if latest active extraction record")
     extraction_state: ExtractionState = Field(
         default=ExtractionState.EXTRACTED_CLAIM_CANDIDATE,
         description="Extraction lifecycle state"
+    )
+    polarity_state: PolarityState = Field(
+        default=PolarityState.RESOLVED_AFFIRMATIVE,
+        description="Negation polarity resolution state"
+    )
+    is_attributed_assertion: bool = Field(
+        default=False,
+        description="True if proposition is explicitly attributed to a named speaker"
     )
     subject: Optional[str] = Field(None, description="Identified subject noun phrase")
     predicate: Optional[str] = Field(None, description="Identified predicate or relation verb")

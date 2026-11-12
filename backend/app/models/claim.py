@@ -11,7 +11,8 @@ class ClaimRecord(Base):
     """
     Persistent model representing an extracted factual claim candidate or structured proposition.
     Retains character-level evidence spans to the originating source text, full language provenance,
-    explicit extraction states, and granular uncertainty tracking.
+    explicit extraction states, scope-aware negation/polarity, attribution links,
+    and versioned idempotency tracking.
     """
     __tablename__ = "claims"
 
@@ -19,13 +20,24 @@ class ClaimRecord(Base):
     investigation_id: Mapped[str] = mapped_column(String(36), ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
     evidence_submission_id: Mapped[str] = mapped_column(String(36), ForeignKey("evidence_submissions.id", ondelete="CASCADE"), nullable=False, index=True)
 
+    # Extraction Versioning & Idempotency
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
     # Verbatim text and normalized representation
     claim_text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_claim: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # Extraction State Lifecycle
+    # Extraction State Lifecycle:
     # EXTRACTED_CLAIM_CANDIDATE, STRUCTURED_PROPOSITION, PARTIAL_EXTRACTION, UNRESOLVED_STATEMENT, NON_FACTUAL_STATEMENT
     extraction_state: Mapped[str] = mapped_column(String(50), default="EXTRACTED_CLAIM_CANDIDATE", nullable=False)
+
+    # Polarity & Negation State:
+    # RESOLVED_AFFIRMATIVE, RESOLVED_NEGATIVE, UNRESOLVED_POLARITY
+    polarity_state: Mapped[str] = mapped_column(String(50), default="RESOLVED_AFFIRMATIVE", nullable=False)
+
+    # Attribution Flag
+    is_attributed_assertion: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Structured Subject-Predicate-Object Representation (nullable when unparseable or non-factual)
     subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
