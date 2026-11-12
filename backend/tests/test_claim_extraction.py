@@ -12,6 +12,7 @@ from app.claims.language import language_detector
 from app.claims.normalizer import claim_normalizer
 from app.claims.offsets import codepoint_to_utf16_offsets, utf16_to_codepoint_offsets
 from app.claims.locking import submission_lock_manager, SubmissionLockManager, LockLease, StaleLockException
+from app.core.database import init_db
 from app.services.pipeline import pipeline_service
 
 # ---------------------------------------------------------------------------
@@ -1763,3 +1764,335 @@ async def test_multimodality_retry_identity_and_zero_claim_lifecycle(test_db_eng
         assert z_final_runs[1].claims_produced == 1
         assert z_final_runs[1].version == 2
         assert z_final_runs[1].source_modality == "COMBINED[CAPTION+OCR_EXTRACTED+TRANSCRIPT]"
+
+
+@pytest.mark.asyncio
+async def test_expired_worker_commit_rejected_without_successor(test_db_engine, db_session):
+    """
+    Requirement 1.1:
+    Expired worker attempts commit BEFORE any successor acquires the lock.
+    Even though locked_by and fencing_token still match the worker's token in DB,
+    the atomic conditional write check (expires_at >= now) must reject the commit,
+    roll back the write transaction, and raise StaleLockException.
+    """
+    test_session_factory = async_sessionmaker(bind=test_db_engine, class_=AsyncSession, expire_on_commit=False)
+
+    inv = Investigation(title="Expired Worker No Successor Investigation", priority="MEDIUM")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        raw_text="The flood waters peaked at midnight.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    sub_id = sub.id
+    inv_id = inv.id
+
+    fast_lock_mgr = SubmissionLockManager(lock_duration_seconds=0.3, poll_interval_seconds=0.02)
+
+    async with test_session_factory() as session:
+        async with fast_lock_mgr.acquire_lock(session, sub_id, worker_id="solo-expired-worker") as lease:
+            assert lease.owner_token == "solo-expired-worker"
+            assert lease.fencing_token == 1
+
+            # Prepare claim in session
+            claim = ClaimRecord(
+                investigation_id=inv_id,
+                evidence_submission_id=sub_id,
+                version=1,
+                is_active=True,
+                claim_text="The flood waters peaked at midnight.",
+                normalized_claim="the flood waters peaked at midnight",
+                extraction_state="EXTRACTED_CLAIM_CANDIDATE",
+                polarity_state="AFFIRMATIVE_SURFACE_SYNTAX",
+                source_modality="RAW_TEXT",
+                evidence_span_start=0,
+                evidence_span_end=35,
+                source_text_hash=hashlib.sha256(b"flood text").hexdigest(),
+                language="en",
+                language_detection_method="deterministic_ascii",
+                is_factual_assertion=True
+            )
+            session.add(claim)
+            await session.flush()
+
+            # Sleep past expiration (0.5s > 0.3s TTL)
+            # NO successor acquires the lock!
+            await asyncio.sleep(0.5)
+
+            # Attempt commit_with_fencing: MUST be rejected by atomic expires_at >= now predicate
+            with pytest.raises(StaleLockException) as exc_info:
+                await fast_lock_mgr.commit_with_fencing(session, lease)
+
+            assert "prior to commit" in str(exc_info.value) or "lost lock lease" in str(exc_info.value)
+
+    # Verify that the stale claim was rolled back and never committed to the database
+    async with test_session_factory() as verify_session:
+        claims = list((await verify_session.execute(
+            select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub_id)
+        )).scalars().all())
+        assert len(claims) == 0
+
+
+@pytest.mark.asyncio
+async def test_valid_worker_commit_with_write_reservation_succeeds(test_db_engine, db_session):
+    """
+    Requirement 1.2:
+    Valid worker holding an active, unexpired lease successfully executes commit_with_fencing.
+    The conditional write touches locked_at and commits atomically.
+    Successors arriving afterwards cannot corrupt or supersede its results.
+    """
+    test_session_factory = async_sessionmaker(bind=test_db_engine, class_=AsyncSession, expire_on_commit=False)
+
+    inv = Investigation(title="Valid Worker Write Reservation Investigation", priority="HIGH")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        raw_text="The port reopened on Wednesday.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    sub_id = sub.id
+    inv_id = inv.id
+
+    lock_mgr = SubmissionLockManager(lock_duration_seconds=5.0, poll_interval_seconds=0.02)
+
+    # Valid worker acquires, stages claims, and commits with fencing
+    async with test_session_factory() as session_a:
+        async with lock_mgr.acquire_lock(session_a, sub_id, worker_id="valid-worker-a") as lease_a:
+            claim_a = ClaimRecord(
+                investigation_id=inv_id,
+                evidence_submission_id=sub_id,
+                version=1,
+                is_active=True,
+                claim_text="The port reopened on Wednesday.",
+                normalized_claim="the port reopened on wednesday",
+                extraction_state="EXTRACTED_CLAIM_CANDIDATE",
+                polarity_state="AFFIRMATIVE_SURFACE_SYNTAX",
+                source_modality="RAW_TEXT",
+                evidence_span_start=0,
+                evidence_span_end=31,
+                source_text_hash=hashlib.sha256(b"port text").hexdigest(),
+                language="en",
+                language_detection_method="deterministic_ascii",
+                is_factual_assertion=True
+            )
+            session_a.add(claim_a)
+            await session_a.flush()
+
+            # Atomically commit with fencing verification
+            await lock_mgr.commit_with_fencing(session_a, lease_a)
+
+    # Verify claim_a is active
+    async with test_session_factory() as verify_session:
+        claims_a = list((await verify_session.execute(
+            select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub_id, ClaimRecord.is_active == True)
+        )).scalars().all())
+        assert len(claims_a) == 1
+        assert claims_a[0].claim_text == "The port reopened on Wednesday."
+        assert claims_a[0].version == 1
+
+    # Successor Worker B arrives afterwards, acquires cleanly with fencing_token = 2
+    async with test_session_factory() as session_b:
+        async with lock_mgr.acquire_lock(session_b, sub_id, worker_id="valid-worker-b") as lease_b:
+            assert lease_b.fencing_token == 2
+            assert lease_b.owner_token == "valid-worker-b"
+
+
+@pytest.mark.asyncio
+async def test_database_schema_compatibility_fresh_and_upgraded(tmp_path):
+    """
+    Requirement 2:
+    Verifies that init_db() starts successfully against:
+    A. A fresh database (creating tables where locked_by is nullable).
+    B. An existing pre-change database (where locked_by had NOT NULL),
+       safely migrating it to allow NULL for released locks while preserving:
+       - Existing claim records
+       - Existing claim extraction runs
+       - Existing fencing counters (never reset)
+       - Existing version numbers
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    import sqlite3
+
+    # -------------------------------------------------------------
+    # Case A: Fresh Database
+    # -------------------------------------------------------------
+    fresh_db_file = tmp_path / "fresh.db"
+    fresh_engine = create_async_engine(f"sqlite+aiosqlite:///{fresh_db_file}")
+
+    # Initialize fresh database via init_db
+    await init_db(target_engine=fresh_engine)
+
+    # Verify table exists and locked_by is nullable
+    async with fresh_engine.begin() as conn:
+        info = (await conn.exec_driver_sql("PRAGMA table_info(submission_processing_locks);")).fetchall()
+        locked_by_col = next(c for c in info if c[1] == "locked_by")
+        assert locked_by_col[3] == 0, "Fresh database locked_by must be nullable (notnull == 0)"
+
+    # Verify lock acquisition and release on fresh database
+    fresh_session_factory = async_sessionmaker(bind=fresh_engine, class_=AsyncSession, expire_on_commit=False)
+    lock_mgr = SubmissionLockManager(lock_duration_seconds=10.0)
+
+    async with fresh_session_factory() as session:
+        async with lock_mgr.acquire_lock(session, "fresh-sub-1", worker_id="worker-fresh") as lease:
+            assert lease.fencing_token == 1
+            assert lease.owner_token == "worker-fresh"
+        # On release, locked_by is set to None
+        res = (await session.execute(
+            select(SubmissionProcessingLock).where(SubmissionProcessingLock.submission_id == "fresh-sub-1")
+        )).scalars().first()
+        assert res.locked_by is None
+        assert res.fencing_token == 1
+
+    await fresh_engine.dispose()
+
+    # -------------------------------------------------------------
+    # Case B: Existing Pre-Change Database Upgrade
+    # -------------------------------------------------------------
+    legacy_db_file = tmp_path / "legacy.db"
+
+    # Pre-create SQLite database with the old pre-change schema:
+    # 1. submission_processing_locks with locked_by NOT NULL
+    # 2. claims table with existing claims
+    # 3. claim_extraction_runs with existing runs
+    legacy_conn = sqlite3.connect(legacy_db_file)
+    legacy_conn.execute("PRAGMA foreign_keys=OFF;")
+    legacy_conn.execute("""
+    CREATE TABLE submission_processing_locks (
+        submission_id VARCHAR(36) PRIMARY KEY,
+        locked_by VARCHAR(100) NOT NULL,
+        fencing_token INTEGER NOT NULL DEFAULT 1,
+        locked_at DATETIME NOT NULL,
+        expires_at DATETIME NOT NULL
+    );
+    """)
+    legacy_conn.execute("""
+    CREATE TABLE claim_extraction_runs (
+        id VARCHAR(36) PRIMARY KEY,
+        evidence_submission_id VARCHAR(36) NOT NULL,
+        version INTEGER NOT NULL,
+        is_active BOOLEAN NOT NULL,
+        source_text_hash VARCHAR(64) NOT NULL,
+        source_modality VARCHAR(50) NOT NULL,
+        extractor_name VARCHAR(100) NOT NULL,
+        extractor_version VARCHAR(50) NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        claims_produced INTEGER NOT NULL,
+        error_message TEXT,
+        reprocess_reason VARCHAR(255),
+        completed_at DATETIME,
+        created_at DATETIME NOT NULL
+    );
+    """)
+    legacy_conn.execute("""
+    CREATE TABLE claims (
+        id VARCHAR(36) PRIMARY KEY,
+        investigation_id VARCHAR(36) NOT NULL,
+        evidence_submission_id VARCHAR(36) NOT NULL,
+        extraction_run_id VARCHAR(36),
+        version INTEGER NOT NULL,
+        is_active BOOLEAN NOT NULL,
+        claim_text TEXT NOT NULL,
+        normalized_claim TEXT NOT NULL,
+        extraction_state VARCHAR(50) NOT NULL,
+        polarity_state VARCHAR(50) NOT NULL,
+        is_attributed_assertion BOOLEAN NOT NULL,
+        subject VARCHAR(255),
+        predicate VARCHAR(255),
+        object TEXT,
+        qualifiers JSON,
+        source_modality VARCHAR(50) NOT NULL,
+        evidence_span_start INTEGER NOT NULL,
+        evidence_span_end INTEGER NOT NULL,
+        source_text_hash VARCHAR(64) NOT NULL,
+        extracted_entities JSON,
+        language VARCHAR(10) NOT NULL,
+        language_detection_method VARCHAR(50) NOT NULL,
+        language_detector_version VARCHAR(50),
+        language_detector_probability FLOAT,
+        translation_provenance JSON,
+        is_factual_assertion BOOLEAN NOT NULL,
+        extraction_method VARCHAR(50) NOT NULL,
+        extraction_confidence FLOAT,
+        uncertainty_notes TEXT,
+        created_at DATETIME NOT NULL
+    );
+    """)
+
+    # Seed legacy data: an expired lock with fencing_token = 8, a run with version = 3, and a claim
+    legacy_conn.execute("""
+    INSERT INTO submission_processing_locks VALUES (
+        'legacy-sub-1', 'old-worker-prior', 8, '2020-01-01 00:00:00', '2020-01-01 00:00:30'
+    );
+    """)
+    legacy_conn.execute("""
+    INSERT INTO claim_extraction_runs VALUES (
+        'run-leg-1', 'legacy-sub-1', 3, 1, 'hash123', 'RAW_TEXT', 'TruthNetClaimExtractor', '1.0.0', 'COMPLETED', 1, NULL, NULL, '2026-11-13', '2026-11-13'
+    );
+    """)
+    legacy_conn.execute("""
+    INSERT INTO claims VALUES (
+        'claim-leg-1', 'inv-1', 'legacy-sub-1', 'run-leg-1', 3, 1, 'Historical claim from version 3.', 'historical claim from version 3',
+        'EXTRACTED_CLAIM_CANDIDATE', 'AFFIRMATIVE_SURFACE_SYNTAX', 0, NULL, NULL, NULL, NULL, 'RAW_TEXT', 0, 32, 'hash123',
+        NULL, 'en', 'deterministic_ascii', NULL, NULL, NULL, 1, 'HYBRID', NULL, NULL, '2026-11-13'
+    );
+    """)
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    # Now upgrade the legacy database via application init_db()
+    legacy_engine = create_async_engine(f"sqlite+aiosqlite:///{legacy_db_file}")
+    await init_db(target_engine=legacy_engine)
+
+    # Verify migration results:
+    async with legacy_engine.begin() as conn:
+        # 1. locked_by is now nullable
+        info = (await conn.exec_driver_sql("PRAGMA table_info(submission_processing_locks);")).fetchall()
+        locked_by_col = next(c for c in info if c[1] == "locked_by")
+        assert locked_by_col[3] == 0, "Migrated table locked_by must be nullable (notnull == 0)"
+
+        # 2. Existing lock row and fencing token are preserved exactly
+        lock_row = (await conn.exec_driver_sql("SELECT submission_id, locked_by, fencing_token FROM submission_processing_locks WHERE submission_id = 'legacy-sub-1';")).fetchone()
+        assert lock_row[0] == "legacy-sub-1"
+        assert lock_row[1] == "old-worker-prior"
+        assert lock_row[2] == 8, "Existing fencing token 8 must be preserved across migration"
+
+        # 3. Existing extraction run is preserved
+        run_row = (await conn.exec_driver_sql("SELECT id, version, is_active FROM claim_extraction_runs WHERE id = 'run-leg-1';")).fetchone()
+        assert run_row[0] == "run-leg-1"
+        assert run_row[1] == 3
+        assert run_row[2] == 1
+
+        # 4. Existing claim is preserved
+        claim_row = (await conn.exec_driver_sql("SELECT id, claim_text, version FROM claims WHERE id = 'claim-leg-1';")).fetchone()
+        assert claim_row[0] == "claim-leg-1"
+        assert claim_row[1] == "Historical claim from version 3."
+        assert claim_row[2] == 3
+
+    # Verify new code can operate on the migrated database:
+    legacy_session_factory = async_sessionmaker(bind=legacy_engine, class_=AsyncSession, expire_on_commit=False)
+    async with legacy_session_factory() as session:
+        # Stale lock recovery: old lock was from 01:00:30 (expired). Worker recovers with token = 8 + 1 = 9!
+        async with lock_mgr.acquire_lock(session, "legacy-sub-1", worker_id="upgrade-recovery-worker") as lease:
+            assert lease.fencing_token == 9
+            assert lease.owner_token == "upgrade-recovery-worker"
+
+        # On release, locked_by is set to NULL without IntegrityError
+        res = (await session.execute(
+            select(SubmissionProcessingLock).where(SubmissionProcessingLock.submission_id == "legacy-sub-1")
+        )).scalars().first()
+        assert res.locked_by is None
+        assert res.fencing_token == 9
+
+    await legacy_engine.dispose()

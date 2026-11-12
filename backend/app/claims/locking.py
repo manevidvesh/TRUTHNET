@@ -135,10 +135,11 @@ class SubmissionLockManager:
         prior to calling session.commit().
         
         Guarantees:
-        1. An atomic conditional check asserts owner_token, fencing_token, and unexpired TTL.
+        1. An atomic conditional write asserts owner_token, fencing_token, and unexpired TTL (expires_at >= now)
+           in a single atomic database statement without a separate SELECT.
         2. In SQLite WAL mode, executing this write asserts exclusive write reservation for this transaction.
         3. If the lease was superseded by another worker (which acquired with higher fencing_token
-           or changed locked_by) or if the lease expired, rowcount == 0.
+           or changed locked_by) or if the lease expired (expires_at < now), rowcount == 0.
         4. When rowcount == 0, session.rollback() is invoked immediately, discarding all staged mutations
            (including deactivations of successor records and new uncommitted claims), and StaleLockException
            is raised.
@@ -147,31 +148,14 @@ class SubmissionLockManager:
         """
         now = datetime.now(timezone.utc)
         
-        # Verify row exists and is unexpired with Python timezone discipline
-        res = await session.execute(
-            select(SubmissionProcessingLock).where(
-                SubmissionProcessingLock.submission_id == lease.submission_id,
-                SubmissionProcessingLock.locked_by == lease.owner_token,
-                SubmissionProcessingLock.fencing_token == lease.fencing_token
-            )
-        )
-        lock_row = res.scalars().first()
-        if not lock_row or not lease.is_active or _ensure_utc(lock_row.expires_at) < now:
-            lease.is_active = False
-            await session.rollback()
-            raise StaleLockException(
-                f"Worker {lease.owner_token} lost lock lease for submission {lease.submission_id} "
-                f"(fencing_token={lease.fencing_token}) prior to commit. "
-                f"Lock expired or was superseded. Write transaction rolled back."
-            )
-
-        # Atomic conditional update touching locked_at
+        # Single atomic conditional update asserting ownership, fencing token, and unexpired lease
         touch_stmt = (
             update(SubmissionProcessingLock)
             .where(
                 SubmissionProcessingLock.submission_id == lease.submission_id,
                 SubmissionProcessingLock.locked_by == lease.owner_token,
-                SubmissionProcessingLock.fencing_token == lease.fencing_token
+                SubmissionProcessingLock.fencing_token == lease.fencing_token,
+                SubmissionProcessingLock.expires_at >= now
             )
             .values(locked_at=now)
         )
