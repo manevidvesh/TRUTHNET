@@ -19,6 +19,9 @@ class MediaAsset(Base):
 
     # Submissions reusing this media asset
     submissions = relationship("EvidenceSubmission", back_populates="media_asset")
+    fingerprint = relationship("MediaFingerprint", back_populates="media_asset", uselist=False, cascade="all, delete-orphan")
+    frame_fingerprints = relationship("FrameFingerprint", back_populates="media_asset", cascade="all, delete-orphan")
+
 
 class EvidenceSubmission(Base):
     __tablename__ = "evidence_submissions"

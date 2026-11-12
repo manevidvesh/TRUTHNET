@@ -1,0 +1,74 @@
+import uuid
+from datetime import datetime, timezone
+from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.core.database import Base
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+class MediaFingerprint(Base):
+    """
+    Persistent perceptual and cryptographic fingerprint for a MediaAsset.
+    Retains complete algorithm and preprocessing version provenance.
+    """
+    __tablename__ = "media_fingerprints"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    media_asset_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("media_assets.id", ondelete="CASCADE"), unique=True, index=True, nullable=False
+    )
+    
+    # Versioning & Preprocessing Provenance
+    algorithm_name: Mapped[str] = mapped_column(String(100), default="TRUTHNET-PERCEPTUAL-HASH", nullable=False)
+    algorithm_version: Mapped[str] = mapped_column(String(50), default="1.0.0", nullable=False)
+    preprocessing_version: Mapped[str] = mapped_column(String(50), default="PREPROCESS-V1", nullable=False)
+    parameters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Hashes
+    sha256_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    phash_hex: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    dhash_hex: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    ahash_hex: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    colorhash_hex: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Local Feature Descriptors (ORB)
+    orb_keypoints_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    orb_descriptor_rel_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Status & Timestamps
+    indexing_status: Mapped[str] = mapped_column(String(50), default="INDEXED", nullable=False)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationship
+    media_asset = relationship("MediaAsset", back_populates="fingerprint")
+
+class FrameFingerprint(Base):
+    """
+    Perceptual fingerprint for a derived video keyframe with timestamp provenance.
+    """
+    __tablename__ = "frame_fingerprints"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    media_asset_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("media_assets.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    derived_artifact_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("derived_artifacts.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    
+    frame_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    algorithm_version: Mapped[str] = mapped_column(String(50), default="1.0.0", nullable=False)
+    preprocessing_version: Mapped[str] = mapped_column(String(50), default="PREPROCESS-V1", nullable=False)
+    
+    phash_hex: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    dhash_hex: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    
+    indexed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    media_asset = relationship("MediaAsset", back_populates="frame_fingerprints")
+    derived_artifact = relationship("DerivedArtifact")
