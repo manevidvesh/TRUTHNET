@@ -12,7 +12,7 @@ TRUTHNET AI is built in 12 focused phases delivering a complete multimodal misin
 
 - [x] **Phase 1: Foundation & Vertical Slice Intake Pipeline** - Establish modular monolith architecture, SQLite schema, investigation CRUD, and multimodal evidence intake.
 - [x] **Phase 2: Multimodal Extraction & Media Preprocessing** - Extract technical metadata, OCR, speech transcripts, and video keyframes strictly as Observed Data.
-- [ ] **Phase 3: Persistent Historical Media Indexing & Perceptual Hashing** - Implement local perceptual index, MediaAsset vs EvidenceSubmission decoupling, and 6-level match classification.
+- [x] **Phase 3: Persistent Historical Media Indexing & Perceptual Hashing** - Implement local perceptual index, MediaAsset vs EvidenceSubmission decoupling, and 6-level match classification.
 - [ ] **Phase 4: Historical vs Current Contextual Verification Engine** - Build automated contextual comparison diffing claimed vs historical event, date, location, and attribution.
 - [ ] **Phase 5: Media Authenticity & Deepfake Model Detection Engine** - Build auditable Model Registry, real detector inference, facial anomaly analysis, and explicit unavailable reporting.
 - [ ] **Phase 6: Claim Extraction, Normalization & Multilingual Processing** - Extract and normalize factual claims, preserve original text, and handle English, Hindi, and Telugu.
@@ -66,9 +66,14 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Perceptual index survives application restarts and updates incrementally without full re-indexing.
   2. Exact duplicate file submissions reuse the existing MediaAsset while creating distinct EvidenceSubmissions preserving separate contexts.
-  3. Media matching returns one of 6 discrete classifications (Exact File Match, Near-Duplicate, Same Photograph, Possible Same Photo, Visually Related, No Sufficient Match) with distance scores.
-  4. External reverse-image search reports "EXTERNAL REVERSE-IMAGE SEARCH UNAVAILABLE" honestly when no provider is active.
-**Plans**: TBD
+  3. Media matching returns one of 6 discrete classifications (EXACT_FILE_MATCH, NEAR_DUPLICATE, SAME_PHOTOGRAPH_MODIFIED, POSSIBLE_VISUAL_SIMILARITY, INSUFFICIENT_MATCH_EVIDENCE, NO_LOCAL_MATCH_FOUND) with raw measurements and without arbitrary confidence percentages.
+  4. External reverse-image search reports "EXTERNAL REVERSE-IMAGE SEARCH UNAVAILABLE" honestly without returning fabricated or mocked hits.
+**Plans**: 3 plans
+
+Plans:
+- [x] 03-01: Persistent Fingerprint Schema, Preprocessing V1, Descriptor Store, and Hasher Indexer
+- [x] 03-02: Candidate Retrieval, Geometric ORB+RANSAC Verification, and Six-Classification Match Engine
+- [x] 03-03: Matching REST APIs, Cross-Investigation Privacy, Multi-Frame Video Tracking, and Expanded Benchmark
 
 ### Phase 4: Historical vs Current Contextual Verification Engine
 **Goal**: Build the context comparison engine that detects conflicts between earlier recorded media context and newly claimed context.

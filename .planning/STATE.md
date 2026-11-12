@@ -3,10 +3,10 @@ gsd_state_version: '1.0'
 status: phase_complete
 progress:
   total_phases: 12
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 17
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
+  percent: 25
 ---
 
 # Project State
@@ -16,23 +16,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-11-13)
 
 **Core value:** AI identifies signals. Evidence establishes context. The system explains relationships. Investigators make decisions.
-**Current focus:** Phase 2 Complete (Multimodal Extraction & Media Preprocessing) -> Ready for Phase 3 (Historical Media Index & Perceptual Hashing)
+**Current focus:** Phase 3 Complete (Persistent Historical Media Indexing & Perceptual Hashing) -> Awaiting approval to prepare Phase 4 (Contextual Verification Engine)
 
 ## Current Position
 
-Phase: 2 of 12 (Multimodal Extraction & Media Preprocessing) - COMPLETE
+Phase: 3 of 12 (Persistent Historical Media Indexing & Perceptual Hashing) - COMPLETE
 Plan: 3 of 3 completed
-Status: Phase 2 complete (all 3 plans verified with 32 automated tests)
-Last activity: 2026-11-13 — Phase 2 completed: Versioned ExtractionRecord & DerivedArtifact models, EXIF timezone discipline, PyAV audio demuxing & keyframe sampling, Windows Media OCR & faster-whisper transcription adapters, and E2E pipeline integration.
+Status: Phase 3 complete (all 3 plans verified with 45 automated tests)
+Last activity: 2026-11-13 — Phase 3 completed: MediaFingerprint & FrameFingerprint models, PREPROCESS-V1 deterministic normalization, secure NPZ descriptor store, 6-classification MatchEngine (EXACT_FILE_MATCH, NEAR_DUPLICATE, SAME_PHOTOGRAPH_MODIFIED, POSSIBLE_VISUAL_SIMILARITY, INSUFFICIENT_MATCH_EVIDENCE, NO_LOCAL_MATCH_FOUND), cross-investigation privacy filter, multi-frame video tracking, external search honest UNAVAILABLE status, and 15-transformation benchmark suite (0 FP, 0 FN).
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 10 min
-- Total execution time: 1.0 hours
+- Total plans completed: 9
+- Average duration: 11 min
+- Total execution time: 1.65 hours
 
 **By Phase:**
 
@@ -40,9 +40,10 @@ Progress: [██░░░░░░░░] 17%
 |-------|-------|-------|----------|
 | 01-foundation-vertical-slice-intake-pipeline | 3/3 | 32 min | 10.7 min |
 | 02-multimodal-extraction-media-preprocessing | 3/3 | 25 min | 8.3 min |
+| 03-persistent-historical-media-indexing-perceptual-hashing | 3/3 | 39 min | 13.0 min |
 
 **Recent Trend:**
-- Last 3 plans: 8m, 8m, 9m
+- Last 3 plans: 12m, 14m, 13m
 - Trend: Highly Stable
 
 *Updated after each plan completion*
@@ -64,6 +65,10 @@ Recent decisions affecting current work:
 - [Phase 2]: Dual-Engine OCR adapter with Windows.Media.Ocr (winocr) operational on host and Tesseract fallback; zero synthetic text.
 - [Phase 2]: faster-whisper speech transcription with CTranslate2 INT8 CPU execution and honest UNAVAILABLE reporting when weights missing.
 - [Phase 2]: Video boundary keyframe extraction anchoring on frame 0 (0ms) and last decodable frame, with uniform intermediate sampling capped at max_frames limit.
+- [Phase 3]: Six discrete match classifications enforced: EXACT_FILE_MATCH, NEAR_DUPLICATE, SAME_PHOTOGRAPH_MODIFIED, POSSIBLE_VISUAL_SIMILARITY, INSUFFICIENT_MATCH_EVIDENCE, NO_LOCAL_MATCH_FOUND.
+- [Phase 3]: Strict epistemological boundaries: failed RANSAC homography does NOT prove same scene or event; ORB alone never infers event-level identity; raw measurements exposed without arbitrary confidence percentages.
+- [Phase 3]: Cross-investigation privacy strictly enforced: global index matches completely scrub foreign investigation IDs, titles, notes, investigator names, and timestamps (GLOBAL_INDEX_ANONYMIZED).
+- [Phase 3]: External reverse-image search (Google Lens, TinEye, Bing, Wayback) honestly reported as UNAVAILABLE with zero mocked hits.
 
 
 ### Pending Todos
