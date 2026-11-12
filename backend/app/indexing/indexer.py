@@ -34,8 +34,8 @@ class MediaIndexer:
         if asset.mime_type.startswith("image/"):
             try:
                 fp_data = media_hasher.compute_image_fingerprints(file_path)
-                desc_rel_path = descriptor_store.save_descriptors(
-                    asset.sha256_hash, fp_data.get("descriptors")
+                desc_rel_path = descriptor_store.save_features(
+                    asset.sha256_hash, fp_data.get("keypoints_pts"), fp_data.get("descriptors")
                 )
 
                 # Check if fingerprint already exists
@@ -101,8 +101,11 @@ class MediaIndexer:
 
             try:
                 fp_data = media_hasher.compute_image_fingerprints(frame_path)
-                frame_idx = (art.artifact_metadata or {}).get("frame_index", 0)
-                timestamp_ms = (art.artifact_metadata or {}).get("actual_timestamp_ms", 0.0)
+                meta = art.artifact_metadata or {}
+                frame_idx = meta.get("frame_index", 0)
+                timestamp_ms = meta.get("actual_timestamp_ms")
+                if timestamp_ms is None:
+                    timestamp_ms = meta.get("timestamp_ms", 0.0)
 
                 existing_res = await db.execute(
                     select(FrameFingerprint).where(FrameFingerprint.derived_artifact_id == art.id)

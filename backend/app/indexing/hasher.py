@@ -43,6 +43,7 @@ class MediaHasher:
         # 2. ORB Keypoints and Descriptors
         kps, descs = self.orb.detectAndCompute(gray_cv, None)
         keypoints_count = len(kps) if kps else 0
+        keypoints_pts = np.array([[kp.pt[0], kp.pt[1]] for kp in kps], dtype=np.float32) if (kps and len(kps) > 0) else None
 
         return {
             "algorithm_name": self.ALGORITHM_NAME,
@@ -54,6 +55,7 @@ class MediaHasher:
             "ahash_hex": ahash,
             "colorhash_hex": colorhash,
             "orb_keypoints_count": keypoints_count,
+            "keypoints_pts": keypoints_pts,
             "descriptors": descs,
             "preprocessing_meta": prep_meta
         }

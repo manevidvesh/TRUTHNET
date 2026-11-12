@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 import numpy as np
 from app.core.config import settings
 
@@ -10,7 +10,8 @@ MAX_DESCRIPTOR_FILE_BYTES = 2 * 1024 * 1024  # 2 MB limit
 
 class DescriptorStore:
     """
-    Secure storage and retrieval for binary feature descriptor matrices (ORB).
+    Secure storage and retrieval for binary feature descriptor matrices (ORB)
+    and 2D keypoint coordinate arrays.
     Enforces strict path isolation, file size limits, allow_pickle=False,
     and dimension/dtype validation to prevent deserialization vulnerabilities.
     """
@@ -19,61 +20,87 @@ class DescriptorStore:
         self.base_dir = (base_dir or (settings.DATA_DIR / "derived" / "descriptors")).resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_descriptors(self, sha256_hash: str, descriptors: Optional[np.ndarray]) -> Optional[str]:
-        if descriptors is None or len(descriptors) == 0:
+    def save_features(
+        self,
+        sha256_hash: str,
+        keypoints_pts: Optional[np.ndarray],
+        descriptors: Optional[np.ndarray]
+    ) -> Optional[str]:
+        if descriptors is None or keypoints_pts is None or len(descriptors) == 0:
             return None
 
-        # Verify array shape and type
-        if descriptors.ndim != 2 or descriptors.shape[1] != 32 or descriptors.dtype != np.uint8:
-            logger.warning(f"Rejecting invalid descriptor array with shape {descriptors.shape} and dtype {descriptors.dtype}")
+        # Verify array shapes and types
+        if (
+            descriptors.ndim != 2 or descriptors.shape[1] != 32 or descriptors.dtype != np.uint8 or
+            keypoints_pts.ndim != 2 or keypoints_pts.shape[1] != 2 or keypoints_pts.dtype != np.float32
+        ):
+            logger.warning(
+                f"Rejecting invalid feature arrays: descs shape={getattr(descriptors, 'shape', None)}, "
+                f"kps shape={getattr(keypoints_pts, 'shape', None)}"
+            )
             return None
 
         shard_dir = self.base_dir / sha256_hash[:2]
         shard_dir.mkdir(parents=True, exist_ok=True)
-        file_path = shard_dir / f"{sha256_hash}.npy"
+        file_path = shard_dir / f"{sha256_hash}.npz"
 
-        # Save binary numpy array without pickle
-        np.save(str(file_path), descriptors, allow_pickle=False)
+        # Save compressed binary numpy archive without pickle
+        np.savez(str(file_path), keypoints=keypoints_pts, descriptors=descriptors)
 
-        # Return relative path relative to settings.DATA_DIR
         try:
             rel_path = str(file_path.relative_to(settings.DATA_DIR))
         except ValueError:
-            rel_path = f"derived/descriptors/{sha256_hash[:2]}/{sha256_hash}.npy"
+            rel_path = f"derived/descriptors/{sha256_hash[:2]}/{sha256_hash}.npz"
 
         return rel_path
 
-    def load_descriptors(self, rel_path: str) -> Optional[np.ndarray]:
+    def load_features(self, rel_path: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         if not rel_path:
-            return None
+            return None, None
 
-        # Security: Resolve safe path ensuring no traversal outside base_dir or DATA_DIR
         base = settings.DATA_DIR.resolve()
         target = (base / rel_path).resolve()
         try:
             target.relative_to(base)
         except ValueError:
-            logger.error(f"Security traversal violation detected in descriptor path: {rel_path}")
-            return None
+            logger.error(f"Security traversal violation detected in feature path: {rel_path}")
+            return None, None
 
         if not target.exists():
-            return None
+            return None, None
 
-        # Check file size bound
         if target.stat().st_size > MAX_DESCRIPTOR_FILE_BYTES:
-            logger.warning(f"Descriptor file {rel_path} exceeds maximum size limit of {MAX_DESCRIPTOR_FILE_BYTES} bytes")
-            return None
+            logger.warning(f"Feature file {rel_path} exceeds maximum size limit of {MAX_DESCRIPTOR_FILE_BYTES} bytes")
+            return None, None
 
         try:
-            # Strictly load with allow_pickle=False
-            data = np.load(str(target), allow_pickle=False)
-            if data.ndim == 2 and data.shape[1] == 32 and data.dtype == np.uint8:
-                return data
-            else:
-                logger.warning(f"Corrupt or invalid descriptor structure loaded from {rel_path}: shape {data.shape}")
-                return None
+            with np.load(str(target), allow_pickle=False) as data:
+                kps = data["keypoints"]
+                descs = data["descriptors"]
+                if (
+                    kps.ndim == 2 and kps.shape[1] == 2 and kps.dtype == np.float32 and
+                    descs.ndim == 2 and descs.shape[1] == 32 and descs.dtype == np.uint8
+                ):
+                    return kps, descs
+                else:
+                    logger.warning(f"Invalid feature array structure in {rel_path}")
+                    return None, None
         except Exception as e:
-            logger.error(f"Failed to load descriptor array from {rel_path}: {e}")
-            return None
+            logger.error(f"Failed to load features from {rel_path}: {e}")
+            return None, None
+
+    def save_descriptors(
+        self,
+        sha256_hash: str,
+        descriptors: Optional[np.ndarray],
+        keypoints_pts: Optional[np.ndarray] = None
+    ) -> Optional[str]:
+        if descriptors is not None and keypoints_pts is None:
+            keypoints_pts = np.zeros((len(descriptors), 2), dtype=np.float32)
+        return self.save_features(sha256_hash, keypoints_pts, descriptors)
+
+    def load_descriptors(self, rel_path: str) -> Optional[np.ndarray]:
+        _, descs = self.load_features(rel_path)
+        return descs
 
 descriptor_store = DescriptorStore()

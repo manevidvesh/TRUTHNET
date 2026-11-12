@@ -12,6 +12,8 @@ from app.extractors.video_frames import keyframe_extractor
 from app.extractors.audio_demux import audio_demuxer
 from app.extractors.ocr import ocr_service
 from app.extractors.transcription import transcription_service
+from app.indexing.indexer import media_indexer
+from app.matching.engine import match_engine
 
 logger = logging.getLogger("truthnet.pipeline")
 
@@ -219,6 +221,25 @@ class PipelineService:
                         derived_artifact_ids=derived_artifact_ids
                     )
                     session.add(extraction_rec)
+
+                    # Auto-indexing into persistent historical media index
+                    if submission.submission_type == "IMAGE":
+                        try:
+                            await media_indexer.index_media_asset(session, asset.id)
+                        except Exception as idx_err:
+                            logger.warning(f"Auto-indexing failed for asset {asset.id}: {idx_err}")
+                    elif submission.submission_type == "VIDEO":
+                        try:
+                            keyframe_arts = [art for art in derived_artifacts_to_add if art.artifact_type == "KEYFRAME"]
+                            await media_indexer.index_video_keyframes(session, asset.id, keyframe_arts)
+                        except Exception as idx_err:
+                            logger.warning(f"Video frame auto-indexing failed for asset {asset.id}: {idx_err}")
+
+                    # Auto-discover historical matches
+                    try:
+                        await match_engine.match_evidence(session, submission.id)
+                    except Exception as m_err:
+                        logger.warning(f"Auto-matching failed for submission {submission.id}: {m_err}")
 
                 elif submission.submission_type == "URL":
                     if not submission.source_url:

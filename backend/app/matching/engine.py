@@ -92,8 +92,37 @@ class MatchEngine:
         if target_fp and target_fp.orb_descriptor_rel_path:
             q_pts, q_descs = descriptor_store.load_features(target_fp.orb_descriptor_rel_path)
 
+        # Pre-compute frame match statistics per candidate video asset
+        video_frame_stats: Dict[str, Dict[str, Any]] = {}
+        for c in candidates:
+            if c.get("is_video_frame") and c.get("candidate_media_asset_id"):
+                v_id = c["candidate_media_asset_id"]
+                if v_id not in video_frame_stats:
+                    video_frame_stats[v_id] = {"indices": [], "total_frames": 0, "max_consecutive": 1}
+                if "frame_index" in c and c["frame_index"] is not None:
+                    video_frame_stats[v_id]["indices"].append(c["frame_index"])
+                video_frame_stats[v_id]["total_frames"] += 1
+
+        for v_id, stats in video_frame_stats.items():
+            sorted_indices = sorted(set(stats["indices"]))
+            max_c = 1 if sorted_indices else 0
+            cur = 1
+            for i in range(1, len(sorted_indices)):
+                if sorted_indices[i] == sorted_indices[i - 1] + 1:
+                    cur += 1
+                    max_c = max(max_c, cur)
+                else:
+                    cur = 1
+            stats["max_consecutive"] = max_c
+
         # 4. Classify each retrieved candidate
         for cand in candidates:
+            is_vf = cand.get("is_video_frame", False)
+            v_id = cand.get("candidate_media_asset_id")
+            vf_stats = video_frame_stats.get(v_id, {}) if is_vf else {}
+            consec_frames = vf_stats.get("max_consecutive", 1 if is_vf else 0)
+            tot_frames = vf_stats.get("total_frames", 1 if is_vf else 0)
+
             # Classification 1: EXACT_FILE_MATCH
             if cand.get("is_exact_binary"):
                 rec = MediaMatchRecord(
@@ -104,8 +133,9 @@ class MatchEngine:
                     classification="EXACT_FILE_MATCH",
                     method="SHA256_EXACT_BINARY_IDENTITY",
                     algorithm_version=self.MATCH_ENGINE_VERSION,
-                    is_video_frame_match=cand.get("is_video_frame", False),
+                    is_video_frame_match=is_vf,
                     matched_frame_timestamp_ms=cand.get("frame_timestamp_ms"),
+                    consecutive_frames_matched=consec_frames,
                     raw_metrics={"distance": 0, "telemetry": telemetry},
                     classification_rationale="Cryptographic SHA-256 hash match confirms exact identical binary file.",
                     disclaimer="Exact binary identity confirmed via cryptographic SHA-256 equality."
@@ -123,8 +153,9 @@ class MatchEngine:
                     classification="INSUFFICIENT_MATCH_EVIDENCE",
                     method="PERCEPTUAL_PREFILTER_FEATURE_CHECK",
                     algorithm_version=self.MATCH_ENGINE_VERSION,
-                    is_video_frame_match=cand.get("is_video_frame", False),
+                    is_video_frame_match=is_vf,
                     matched_frame_timestamp_ms=cand.get("frame_timestamp_ms"),
+                    consecutive_frames_matched=consec_frames,
                     raw_metrics=cand,
                     classification_rationale="Query image has fewer than 10 distinctive keypoints (low texture/resolution).",
                     disclaimer="Insufficient distinctive visual features to verify or refute geometric correspondence."
@@ -134,6 +165,13 @@ class MatchEngine:
 
             # Classification 2: NEAR_DUPLICATE
             if cand.get("phash_distance", 64) <= 4 and cand.get("dhash_distance", 64) <= 4:
+                disclaimer_text = (
+                    f"Frame-level similarity observed at {cand.get('frame_timestamp_ms', 0)}ms "
+                    f"across {tot_frames} frames ({consec_frames} consecutive). "
+                    f"Does not prove whole-video identity or sub-clip identity."
+                    if is_vf else
+                    "Near-duplicate visual composition observed. Does not certify pixel-for-pixel identity."
+                )
                 rec = MediaMatchRecord(
                     source_evidence_id=submission.id,
                     source_media_asset_id=submission.media_asset_id,
@@ -142,14 +180,15 @@ class MatchEngine:
                     classification="NEAR_DUPLICATE",
                     method="PERCEPTUAL_HASH_HAMMING",
                     algorithm_version=self.MATCH_ENGINE_VERSION,
-                    is_video_frame_match=cand.get("is_video_frame", False),
+                    is_video_frame_match=is_vf,
                     matched_frame_timestamp_ms=cand.get("frame_timestamp_ms"),
+                    consecutive_frames_matched=consec_frames,
                     raw_metrics=cand,
                     classification_rationale=(
                         f"pHash distance {cand['phash_distance']} and dHash distance {cand['dhash_distance']} "
                         f"fall within near-duplicate threshold (<= 4)."
                     ),
-                    disclaimer="Near-duplicate visual composition observed. Does not certify pixel-for-pixel identity."
+                    disclaimer=disclaimer_text
                 )
                 records.append(rec)
                 continue
@@ -164,6 +203,12 @@ class MatchEngine:
 
             # Classification 3: SAME_PHOTOGRAPH_MODIFIED
             if geom_res.get("is_geometric_match"):
+                disclaimer_text = (
+                    f"Geometric frame correspondence at {cand.get('frame_timestamp_ms', 0)}ms. "
+                    f"Does not establish whole-video identity."
+                    if is_vf else
+                    "Geometric projective correspondence indicates this media is an edited, cropped, or transformed variant of the exact same photograph."
+                )
                 rec = MediaMatchRecord(
                     source_evidence_id=submission.id,
                     source_media_asset_id=submission.media_asset_id,
@@ -172,17 +217,15 @@ class MatchEngine:
                     classification="SAME_PHOTOGRAPH_MODIFIED",
                     method="ORB_RANSAC_HOMOGRAPHY",
                     algorithm_version=self.MATCH_ENGINE_VERSION,
-                    is_video_frame_match=cand.get("is_video_frame", False),
+                    is_video_frame_match=is_vf,
                     matched_frame_timestamp_ms=cand.get("frame_timestamp_ms"),
+                    consecutive_frames_matched=consec_frames,
                     raw_metrics=combined_metrics,
                     classification_rationale=(
                         f"RANSAC homography confirmed with {geom_res['inlier_count']} inliers "
                         f"and inlier ratio {geom_res['inlier_ratio']}."
                     ),
-                    disclaimer=(
-                        "Geometric projective correspondence indicates this media is an edited, cropped, "
-                        "or transformed variant of the exact same photograph."
-                    )
+                    disclaimer=disclaimer_text
                 )
                 records.append(rec)
                 continue
@@ -197,8 +240,9 @@ class MatchEngine:
                     classification="INSUFFICIENT_MATCH_EVIDENCE",
                     method="ORB_RANSAC_HOMOGRAPHY",
                     algorithm_version=self.MATCH_ENGINE_VERSION,
-                    is_video_frame_match=cand.get("is_video_frame", False),
+                    is_video_frame_match=is_vf,
                     matched_frame_timestamp_ms=cand.get("frame_timestamp_ms"),
+                    consecutive_frames_matched=consec_frames,
                     raw_metrics=combined_metrics,
                     classification_rationale=geom_res.get("failure_reason"),
                     disclaimer="Insufficient features extracted from candidate to evaluate projective geometry."
@@ -215,8 +259,9 @@ class MatchEngine:
                 classification="POSSIBLE_VISUAL_SIMILARITY",
                 method="PERCEPTUAL_PREFILTER_AND_FEATURE_ALIGNMENT",
                 algorithm_version=self.MATCH_ENGINE_VERSION,
-                is_video_frame_match=cand.get("is_video_frame", False),
+                is_video_frame_match=is_vf,
                 matched_frame_timestamp_ms=cand.get("frame_timestamp_ms"),
+                consecutive_frames_matched=consec_frames,
                 raw_metrics=combined_metrics,
                 classification_rationale=(
                     f"Candidate passed perceptual candidate pre-filter (pHash dist {cand.get('phash_distance')}) "
