@@ -58,6 +58,7 @@ class EvidenceSubmission(Base):
     media_asset = relationship("MediaAsset", back_populates="submissions")
     derived_artifacts = relationship("DerivedArtifact", back_populates="submission", cascade="all, delete-orphan")
     extraction_records = relationship("ExtractionRecord", back_populates="submission", cascade="all, delete-orphan")
+    claims = relationship("ClaimRecord", back_populates="evidence_submission", cascade="all, delete-orphan")
 
 class DerivedArtifact(Base):
     __tablename__ = "derived_artifacts"

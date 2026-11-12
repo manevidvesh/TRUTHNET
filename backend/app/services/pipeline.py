@@ -7,6 +7,8 @@ from app.core.database import async_session_factory
 from app.core.security import safe_url_head_or_get
 from app.core.storage import storage_manager
 from app.models.evidence import EvidenceSubmission, MediaAsset, ExtractionRecord, DerivedArtifact
+from app.models.claim import ClaimRecord
+from app.claims.extractor import claim_extractor
 from app.extractors.metadata import ImageMetadataExtractor, VideoMetadataExtractor, AudioMetadataExtractor
 from app.extractors.video_frames import keyframe_extractor
 from app.extractors.audio_demux import audio_demuxer
@@ -40,6 +42,9 @@ class PipelineService:
 
                 submission.processing_status = "PROCESSING"
                 await session.commit()
+
+                ocr_result: Optional[Dict[str, Any]] = None
+                transcription_result: Optional[Dict[str, Any]] = None
 
                 # Process by submission type
                 if submission.submission_type in ("IMAGE", "AUDIO", "VIDEO"):
@@ -253,6 +258,12 @@ class PipelineService:
                     if not submission.raw_text and not submission.caption:
                         raise ValueError("Text submission is completely empty")
 
+                # Auto-extract factual claims across available text modalities
+                try:
+                    await self._extract_and_persist_claims(session, submission, ocr_result, transcription_result)
+                except Exception as c_err:
+                    logger.warning(f"Claim extraction non-fatal failure for submission {submission.id}: {c_err}")
+
                 # If all validation passes:
                 submission.processing_status = "COMPLETED"
                 submission.error_message = None
@@ -297,5 +308,74 @@ class PipelineService:
                 await self.process_evidence_item(eid, session_factory=factory)
 
         return len(stranded_ids)
+
+    async def _extract_and_persist_claims(
+        self,
+        session,
+        submission: EvidenceSubmission,
+        ocr_result: Optional[Dict[str, Any]] = None,
+        transcription_result: Optional[Dict[str, Any]] = None
+    ) -> List[ClaimRecord]:
+        """
+        Extracts factual claim propositions across available text modalities
+        (caption, raw_text, OCR text, and speech transcripts) and persists ClaimRecords.
+        """
+        claims_to_add: List[ClaimRecord] = []
+
+        # 1. Caption text
+        if submission.caption and submission.caption.strip():
+            caption_claims = claim_extractor.extract_claims_from_text(
+                source_text=submission.caption,
+                investigation_id=submission.investigation_id,
+                evidence_submission_id=submission.id,
+                source_modality="CAPTION"
+            )
+            for c_data in caption_claims:
+                claims_to_add.append(ClaimRecord(**c_data))
+
+        # 2. Raw Text submission
+        if submission.raw_text and submission.raw_text.strip():
+            raw_text_claims = claim_extractor.extract_claims_from_text(
+                source_text=submission.raw_text,
+                investigation_id=submission.investigation_id,
+                evidence_submission_id=submission.id,
+                source_modality="RAW_TEXT"
+            )
+            for c_data in raw_text_claims:
+                claims_to_add.append(ClaimRecord(**c_data))
+
+        # 3. OCR Text (from Image/Video keyframes)
+        if ocr_result and isinstance(ocr_result, dict):
+            ocr_text = ocr_result.get("text")
+            if ocr_text and ocr_text.strip():
+                ocr_claims = claim_extractor.extract_claims_from_text(
+                    source_text=ocr_text,
+                    investigation_id=submission.investigation_id,
+                    evidence_submission_id=submission.id,
+                    source_modality="OCR_EXTRACTED"
+                )
+                for c_data in ocr_claims:
+                    claims_to_add.append(ClaimRecord(**c_data))
+
+        # 4. Speech Transcript (from Audio/Video)
+        if transcription_result and isinstance(transcription_result, dict):
+            transcript_text = transcription_result.get("transcript")
+            if transcript_text and transcript_text.strip():
+                transcript_claims = claim_extractor.extract_claims_from_text(
+                    source_text=transcript_text,
+                    investigation_id=submission.investigation_id,
+                    evidence_submission_id=submission.id,
+                    source_modality="TRANSCRIPT"
+                )
+                for c_data in transcript_claims:
+                    claims_to_add.append(ClaimRecord(**c_data))
+
+        for rec in claims_to_add:
+            session.add(rec)
+
+        if claims_to_add:
+            await session.flush()
+
+        return claims_to_add
 
 pipeline_service = PipelineService()

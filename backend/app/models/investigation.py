@@ -18,5 +18,6 @@ class Investigation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
-    # Relationship to evidence submissions
+    # Relationships
     evidence_submissions = relationship("EvidenceSubmission", back_populates="investigation", cascade="all, delete-orphan")
+    claims = relationship("ClaimRecord", back_populates="investigation", cascade="all, delete-orphan")
