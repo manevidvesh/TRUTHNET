@@ -11,10 +11,16 @@ class ExtractionState(str, Enum):
     NON_FACTUAL_STATEMENT = "NON_FACTUAL_STATEMENT"
 
 class PolarityState(str, Enum):
-    RESOLVED_AFFIRMATIVE = "RESOLVED_AFFIRMATIVE"
-    RESOLVED_NEGATIVE = "RESOLVED_NEGATIVE"
+    # Explicit surface syntax & grammatical states
+    AFFIRMATIVE_SURFACE_SYNTAX = "AFFIRMATIVE_SURFACE_SYNTAX"
+    NEGATIVE_SURFACE_SYNTAX = "NEGATIVE_SURFACE_SYNTAX"
     UNRESOLVED_POLARITY = "UNRESOLVED_POLARITY"
-    NOT_ANALYZED = "NOT_ANALYZED"
+    UNSUPPORTED_LANGUAGE_POLARITY = "UNSUPPORTED_LANGUAGE_POLARITY"
+
+    # Backward-compatible aliases
+    RESOLVED_AFFIRMATIVE = "AFFIRMATIVE_SURFACE_SYNTAX"
+    RESOLVED_NEGATIVE = "NEGATIVE_SURFACE_SYNTAX"
+    NOT_ANALYZED = "UNSUPPORTED_LANGUAGE_POLARITY"
 
 class ClaimBase(BaseModel):
     claim_text: str = Field(..., description="Verbatim extracted sentence or proposition from source text")
@@ -26,8 +32,8 @@ class ClaimBase(BaseModel):
         description="Extraction lifecycle state"
     )
     polarity_state: PolarityState = Field(
-        default=PolarityState.RESOLVED_AFFIRMATIVE,
-        description="Negation polarity resolution state"
+        default=PolarityState.AFFIRMATIVE_SURFACE_SYNTAX,
+        description="Surface grammatical negation polarity state"
     )
     is_attributed_assertion: bool = Field(
         default=False,

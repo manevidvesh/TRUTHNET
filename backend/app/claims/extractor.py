@@ -330,7 +330,7 @@ class ClaimExtractor:
             "claim_text": proposition_text,
             "normalized_claim": self.normalizer.normalize_text(proposition_text),
             "extraction_state": "NON_FACTUAL_STATEMENT",
-            "polarity_state": "RESOLVED_AFFIRMATIVE",
+            "polarity_state": "AFFIRMATIVE_SURFACE_SYNTAX",
             "is_attributed_assertion": False,
             "subject": None,
             "predicate": None,
@@ -421,7 +421,7 @@ class ClaimExtractor:
                 "claim_text": proposition_text,
                 "normalized_claim": normalized_claim,
                 "extraction_state": "PARTIAL_EXTRACTION",
-                "polarity_state": "RESOLVED_AFFIRMATIVE",
+                "polarity_state": "AFFIRMATIVE_SURFACE_SYNTAX",
                 "is_attributed_assertion": False,
                 "subject": None,
                 "predicate": None,
@@ -496,12 +496,12 @@ class ClaimExtractor:
         for m in _INDIC_NEGATION_RE.finditer(proposition_text):
             negation_markers.append({"marker": m.group(0), "span": [m.start(), m.end()]})
 
-        polarity_state = "RESOLVED_AFFIRMATIVE"
+        polarity_state = "AFFIRMATIVE_SURFACE_SYNTAX"
         polarity_method = "AFFIRMATIVE_SURFACE_SYNTAX"
 
         # Correct polarity semantics for unsupported languages (Hindi, Telugu, and all non-English)
         if lang_res.language != "en":
-            polarity_state = "NOT_ANALYZED"
+            polarity_state = "UNSUPPORTED_LANGUAGE_POLARITY"
             polarity_method = "UNSUPPORTED_LANGUAGE_POLARITY"
             qualifiers["negation"] = {
                 "polarity_state": polarity_state,
@@ -511,13 +511,13 @@ class ClaimExtractor:
             }
         elif not negation_markers:
             # English affirmative surface syntax
-            polarity_state = "RESOLVED_AFFIRMATIVE"
+            polarity_state = "AFFIRMATIVE_SURFACE_SYNTAX"
             polarity_method = "AFFIRMATIVE_SURFACE_SYNTAX"
             qualifiers["negation"] = {
                 "polarity_state": polarity_state,
                 "polarity_method": polarity_method,
                 "markers": [],
-                "note": "Surface grammatical polarity is affirmative (no negation markers detected). This represents syntactic form only, NOT factual truth or real-world verification."
+                "note": "Surface grammatical polarity is affirmative (no negation markers detected). This represents syntactic surface form only, NOT factual truth or real-world verification."
             }
         else:
             if _NESTED_SPEECH_ACT_RE.search(proposition_text):
@@ -557,13 +557,14 @@ class ClaimExtractor:
                     "note": "Multiple negation markers detected with ambiguous cross-clause scope; polarity marked unresolved."
                 }
             else:
-                polarity_state = "RESOLVED_NEGATIVE"
+                polarity_state = "NEGATIVE_SURFACE_SYNTAX"
                 polarity_method = "DIRECT_CLAUSAL_NEGATION"
                 qualifiers["negation"] = {
                     "polarity_state": polarity_state,
                     "polarity_method": polarity_method,
                     "markers": negation_markers,
-                    "modified_clause": proposition_text
+                    "modified_clause": proposition_text,
+                    "note": "Surface grammatical polarity is negative (direct clausal negation detected). This represents syntactic surface form only, NOT factual falsification."
                 }
 
         # 5. Causal Assertion Parsing

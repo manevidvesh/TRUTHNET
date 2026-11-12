@@ -9,7 +9,7 @@ from app.core.storage import storage_manager
 from app.models.evidence import EvidenceSubmission, MediaAsset, ExtractionRecord, DerivedArtifact
 from app.models.claim import ClaimRecord, ClaimExtractionRun
 from app.claims.extractor import claim_extractor
-from app.claims.locking import submission_lock_manager
+from app.claims.locking import submission_lock_manager, StaleLockException
 from app.extractors.metadata import ImageMetadataExtractor, VideoMetadataExtractor, AudioMetadataExtractor
 from app.extractors.video_frames import keyframe_extractor
 from app.extractors.audio_demux import audio_demuxer
@@ -394,8 +394,11 @@ class PipelineService:
         inv_id = submission.investigation_id
         ref_timestamp = submission.created_at
 
-        # Acquire per-submission database lock for serialized concurrency across processes
-        async with submission_lock_manager.acquire_lock(session, sub_id):
+        current_extractor_name = "TruthNetClaimExtractor"
+        current_extractor_version = "1.0.0"
+
+        # Acquire per-submission database lock with active renewal heartbeat and monotonic fencing
+        async with submission_lock_manager.acquire_lock(session, sub_id, session_factory=factory) as lease:
             # 2. Query prior runs and claims for this submission
             runs_res = await session.execute(
                 select(ClaimExtractionRun).where(ClaimExtractionRun.evidence_submission_id == sub_id)
@@ -410,17 +413,34 @@ class PipelineService:
             active_claims = [c for c in prior_claims if c.is_active is True]
 
             # 3. Check for Idempotent Retry
-            # Case A: An active ClaimExtractionRun exists with COMPLETED status and matching composite hash
-            if not force_reprocess and active_run and active_run.status == "COMPLETED" and active_run.source_text_hash == composite_hash:
+            # Verify ALL identity attributes: submission ID, source hash, modality, extractor name, extractor version
+            is_same_sub = (active_run.evidence_submission_id == sub_id) if active_run else False
+            is_same_hash = (active_run.source_text_hash == composite_hash) if active_run else False
+            is_same_modality = (active_run.source_modality == primary_modality) if active_run else False
+            is_same_extractor = (active_run.extractor_name == current_extractor_name) if active_run else False
+            is_same_version = (active_run.extractor_version == current_extractor_version) if active_run else False
+
+            if (
+                not force_reprocess
+                and active_run
+                and active_run.status == "COMPLETED"
+                and is_same_sub
+                and is_same_hash
+                and is_same_modality
+                and is_same_extractor
+                and is_same_version
+            ):
                 if active_run.claims_produced == 0:
                     logger.info(
                         f"Idempotent retry for submission {sub_id}: "
-                        f"Active extraction run v{active_run.version} completed with 0 claims. Returning existing 0 claims."
+                        f"Active extraction run v{active_run.version} completed with 0 claims "
+                        f"(modality={primary_modality}, version={current_extractor_version}). Returning existing 0 claims."
                     )
                     return []
                 logger.info(
                     f"Idempotent retry for submission {sub_id}: "
-                    f"Active extraction run v{active_run.version} already completed with {len(active_claims)} claims. Returning existing claims."
+                    f"Active extraction run v{active_run.version} already completed with {len(active_claims)} claims "
+                    f"(modality={primary_modality}, version={current_extractor_version}). Returning existing claims."
                 )
                 return active_claims
 
@@ -466,8 +486,8 @@ class PipelineService:
                     version=next_claim_version,
                     source_text_hash=composite_hash,
                     source_modality=primary_modality,
-                    extractor_name="TruthNetClaimExtractor",
-                    extractor_version="1.0.0",
+                    extractor_name=current_extractor_name,
+                    extractor_version=current_extractor_version,
                     status="FAILED",
                     claims_produced=0,
                     is_active=False,
@@ -478,6 +498,14 @@ class PipelineService:
                 session.add(failed_run)
                 await session.flush()
                 raise extract_err
+
+            # Pre-commit Fencing Verification: ensure this worker still holds the valid lease
+            is_valid_lease = await submission_lock_manager.verify_lease(session, lease)
+            if not is_valid_lease:
+                raise StaleLockException(
+                    f"Worker {lease.owner_token} lost lock lease for submission {sub_id} "
+                    f"(fence={lease.fencing_token}) before commit. Fencing blocked stale write."
+                )
 
             # Atomic database update: deactivate prior runs & claims
             for pr in prior_runs:
@@ -492,8 +520,8 @@ class PipelineService:
                 version=next_claim_version,
                 source_text_hash=composite_hash,
                 source_modality=primary_modality,
-                extractor_name="TruthNetClaimExtractor",
-                extractor_version="1.0.0",
+                extractor_name=current_extractor_name,
+                extractor_version=current_extractor_version,
                 status="COMPLETED",
                 claims_produced=len(claims_to_add),
                 is_active=True,

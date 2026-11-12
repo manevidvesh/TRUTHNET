@@ -59,12 +59,13 @@ class SubmissionProcessingLock(Base):
     """
     Physical database-level per-submission lock table ensuring serialized execution
     across concurrent workers and separate OS processes without relying on in-memory locks.
-    Includes TTL-based stale worker recovery.
+    Includes TTL-based stale worker recovery and monotonic fencing tokens.
     """
     __tablename__ = "submission_processing_locks"
 
     submission_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     locked_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    fencing_token: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     locked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -96,8 +97,8 @@ class ClaimRecord(Base):
     extraction_state: Mapped[str] = mapped_column(String(50), default="EXTRACTED_CLAIM_CANDIDATE", nullable=False)
 
     # Polarity & Negation State:
-    # RESOLVED_AFFIRMATIVE, RESOLVED_NEGATIVE, UNRESOLVED_POLARITY, NOT_ANALYZED
-    polarity_state: Mapped[str] = mapped_column(String(50), default="RESOLVED_AFFIRMATIVE", nullable=False)
+    # AFFIRMATIVE_SURFACE_SYNTAX, NEGATIVE_SURFACE_SYNTAX, UNRESOLVED_POLARITY, UNSUPPORTED_LANGUAGE_POLARITY
+    polarity_state: Mapped[str] = mapped_column(String(50), default="AFFIRMATIVE_SURFACE_SYNTAX", nullable=False)
 
     # Attribution Flag
     is_attributed_assertion: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
