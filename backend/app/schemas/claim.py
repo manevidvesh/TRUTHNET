@@ -14,6 +14,7 @@ class PolarityState(str, Enum):
     RESOLVED_AFFIRMATIVE = "RESOLVED_AFFIRMATIVE"
     RESOLVED_NEGATIVE = "RESOLVED_NEGATIVE"
     UNRESOLVED_POLARITY = "UNRESOLVED_POLARITY"
+    NOT_ANALYZED = "NOT_ANALYZED"
 
 class ClaimBase(BaseModel):
     claim_text: str = Field(..., description="Verbatim extracted sentence or proposition from source text")

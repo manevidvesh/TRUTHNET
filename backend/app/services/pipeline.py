@@ -23,7 +23,13 @@ class PipelineService:
     def __init__(self, session_factory=None):
         self.session_factory = session_factory
 
-    async def process_evidence_item(self, evidence_id: str, session_factory=None) -> bool:
+    async def process_evidence_item(
+        self,
+        evidence_id: str,
+        session_factory=None,
+        force_reprocess: bool = False,
+        reprocess_reason: Optional[str] = None
+    ) -> bool:
         """
         Asynchronously validates and processes an ingested evidence item across all modalities.
         Extracts technical metadata, keyframes, audio streams, OCR text, and speech transcription.
@@ -260,7 +266,14 @@ class PipelineService:
 
                 # Auto-extract factual claims across available text modalities
                 try:
-                    await self._extract_and_persist_claims(session, submission, ocr_result, transcription_result)
+                    await self._extract_and_persist_claims(
+                        session,
+                        submission,
+                        ocr_result,
+                        transcription_result,
+                        force_reprocess=force_reprocess,
+                        reprocess_reason=reprocess_reason
+                    )
                 except Exception as c_err:
                     logger.warning(f"Claim extraction non-fatal failure for submission {submission.id}: {c_err}")
 
@@ -314,83 +327,85 @@ class PipelineService:
         session,
         submission: EvidenceSubmission,
         ocr_result: Optional[Dict[str, Any]] = None,
-        transcription_result: Optional[Dict[str, Any]] = None
+        transcription_result: Optional[Dict[str, Any]] = None,
+        force_reprocess: bool = False,
+        reprocess_reason: Optional[str] = None
     ) -> List[ClaimRecord]:
         """
         Extracts factual claim propositions across available text modalities
         (caption, raw_text, OCR text, and speech transcripts) and persists ClaimRecords.
-        Enforces idempotency and historical versioning: marks prior claims as inactive
-        without deleting historical audit records.
+
+        Strictly distinguishes:
+        1. Pipeline Retries: Same submission, identical source-text hashes, extraction already
+           succeeded. Skips re-extraction and returns existing active claims without version bump.
+        2. Deliberate Reprocessing: Configuration changed, text updated, or explicit force_reprocess.
+           Extracts new version in memory, deactivates prior claims atomically, and preserves historical audit trail.
         """
-        # Query existing claims for this submission to establish extraction versioning
+        import hashlib
+
+        # 1. Collect current available text modalities and their content hashes
+        text_modalities: List[Tuple[str, str]] = []
+        if submission.caption and submission.caption.strip():
+            text_modalities.append(("CAPTION", submission.caption))
+        if submission.raw_text and submission.raw_text.strip():
+            text_modalities.append(("RAW_TEXT", submission.raw_text))
+        if ocr_result and isinstance(ocr_result, dict):
+            ocr_text = ocr_result.get("text")
+            if ocr_text and ocr_text.strip():
+                text_modalities.append(("OCR_EXTRACTED", ocr_text))
+        if transcription_result and isinstance(transcription_result, dict):
+            tr_text = transcription_result.get("transcript")
+            if tr_text and tr_text.strip():
+                text_modalities.append(("TRANSCRIPT", tr_text))
+
+        if not text_modalities:
+            return []
+
+        current_hashes = {hashlib.sha256(text.encode("utf-8")).hexdigest() for _, text in text_modalities}
+
+        # 2. Query existing claims for this submission
         prior_claims_res = await session.execute(
             select(ClaimRecord).where(ClaimRecord.evidence_submission_id == submission.id)
         )
         prior_claims = list(prior_claims_res.scalars().all())
+        active_claims = [c for c in prior_claims if c.is_active is True]
+
+        # 3. Check for Idempotent Retry
+        # If not an explicit reprocessing request AND active claims already exist for matching text hashes:
+        if not force_reprocess and active_claims:
+            active_hashes = {c.source_text_hash for c in active_claims}
+            if current_hashes.issubset(active_hashes):
+                logger.info(
+                    f"Idempotent retry for submission {submission.id}: "
+                    f"Active extraction version {active_claims[0].version} already exists. Returning existing claims."
+                )
+                return active_claims
+
+        # 4. Deliberate Reprocessing / Initial Extraction
         next_claim_version = max([c.version for c in prior_claims], default=0) + 1
-
-        # Deactivate prior claims for this submission (preserving historical audit trace)
-        for pc in prior_claims:
-            pc.is_active = False
-
-        claims_to_add: List[ClaimRecord] = []
         ref_timestamp = submission.created_at
 
-        # 1. Caption text
-        if submission.caption and submission.caption.strip():
-            caption_claims = claim_extractor.extract_claims_from_text(
-                source_text=submission.caption,
+        # Execute extraction in memory first (guarantees atomic version switching)
+        claims_to_add: List[ClaimRecord] = []
+        for modality, text in text_modalities:
+            extracted = claim_extractor.extract_claims_from_text(
+                source_text=text,
                 investigation_id=submission.investigation_id,
                 evidence_submission_id=submission.id,
-                source_modality="CAPTION",
+                source_modality=modality,
                 reference_timestamp=ref_timestamp,
+                reference_timestamp_type="SUBMISSION_TIME",
                 extraction_version=next_claim_version
             )
-            for c_data in caption_claims:
+            for c_data in extracted:
+                if reprocess_reason:
+                    prior_notes = c_data.get("uncertainty_notes") or ""
+                    c_data["uncertainty_notes"] = f"Reprocessed v{next_claim_version} ({reprocess_reason}). {prior_notes}".strip()
                 claims_to_add.append(ClaimRecord(**c_data))
 
-        # 2. Raw Text submission
-        if submission.raw_text and submission.raw_text.strip():
-            raw_text_claims = claim_extractor.extract_claims_from_text(
-                source_text=submission.raw_text,
-                investigation_id=submission.investigation_id,
-                evidence_submission_id=submission.id,
-                source_modality="RAW_TEXT",
-                reference_timestamp=ref_timestamp,
-                extraction_version=next_claim_version
-            )
-            for c_data in raw_text_claims:
-                claims_to_add.append(ClaimRecord(**c_data))
-
-        # 3. OCR Text (from Image/Video keyframes)
-        if ocr_result and isinstance(ocr_result, dict):
-            ocr_text = ocr_result.get("text")
-            if ocr_text and ocr_text.strip():
-                ocr_claims = claim_extractor.extract_claims_from_text(
-                    source_text=ocr_text,
-                    investigation_id=submission.investigation_id,
-                    evidence_submission_id=submission.id,
-                    source_modality="OCR_EXTRACTED",
-                    reference_timestamp=ref_timestamp,
-                    extraction_version=next_claim_version
-                )
-                for c_data in ocr_claims:
-                    claims_to_add.append(ClaimRecord(**c_data))
-
-        # 4. Speech Transcript (from Audio/Video)
-        if transcription_result and isinstance(transcription_result, dict):
-            transcript_text = transcription_result.get("transcript")
-            if transcript_text and transcript_text.strip():
-                transcript_claims = claim_extractor.extract_claims_from_text(
-                    source_text=transcript_text,
-                    investigation_id=submission.investigation_id,
-                    evidence_submission_id=submission.id,
-                    source_modality="TRANSCRIPT",
-                    reference_timestamp=ref_timestamp,
-                    extraction_version=next_claim_version
-                )
-                for c_data in transcript_claims:
-                    claims_to_add.append(ClaimRecord(**c_data))
+        # Atomic database update: only deactivate prior claims once new claims are ready
+        for pc in prior_claims:
+            pc.is_active = False
 
         for rec in claims_to_add:
             session.add(rec)

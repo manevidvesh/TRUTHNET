@@ -79,11 +79,18 @@ class ClaimNormalizer:
         return cleaned
 
     @staticmethod
-    def parse_entities(text: str, reference_timestamp: Optional[datetime] = None) -> Dict[str, List[Dict[str, Any]]]:
+    def parse_entities(
+        text: str,
+        reference_timestamp: Optional[datetime] = None,
+        reference_timestamp_type: Optional[str] = None,
+        reference_timezone: Optional[str] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Extracts entity candidates (persons, organizations, locations, dates, quantities)
         with exact character spans in the provided text.
-        Relative dates are NEVER converted to absolute dates without a verified reference timestamp and timezone.
+        Relative dates are NEVER resolved unless an explicit, semantically valid reference anchor
+        (such as PUBLICATION_TIME or STATEMENT_TIME) with a known timezone is provided.
+        Submission intake time is NEVER assumed to be the statement reference frame.
         """
         entities: Dict[str, List[Dict[str, Any]]] = {
             "persons": [],
@@ -121,14 +128,21 @@ class ClaimNormalizer:
             })
 
         # C. Relative dates (e.g. yesterday, last week)
+        # Supported anchor types where semantic meaning is known
+        _VALID_ANCHOR_TYPES = {"PUBLICATION_TIME", "STATEMENT_TIME", "ANCHORED_CAPTURE_TIME"}
+
         for m in _RELATIVE_DATE_RE.finditer(text):
             raw_match = m.group(0)
             raw_lower = raw_match.lower()
             normalized_date = None
             is_anchored = False
+            caveat_msg = ""
 
-            # Only attempt relative date anchoring if reference_timestamp is valid and timezone-aware
-            if reference_timestamp and reference_timestamp.tzinfo is not None:
+            # Check if reference_timestamp is valid, timezone-aware, AND of a semantically valid anchor type
+            has_tz = reference_timestamp is not None and reference_timestamp.tzinfo is not None
+            is_valid_type = reference_timestamp_type in _VALID_ANCHOR_TYPES
+
+            if has_tz and is_valid_type:
                 if "yesterday" in raw_lower:
                     dt = reference_timestamp - timedelta(days=1)
                     normalized_date = dt.strftime("%Y-%m-%d")
@@ -140,13 +154,21 @@ class ClaimNormalizer:
                     dt = reference_timestamp - timedelta(days=2)
                     normalized_date = dt.strftime("%Y-%m-%d")
                     is_anchored = True
+                caveat_msg = f"Relative date anchored using known {reference_timestamp_type}."
+            elif reference_timestamp_type == "SUBMISSION_TIME":
+                caveat_msg = "Relative date preserved without normalization: submission intake time cannot be assumed as the statement temporal reference frame."
+            else:
+                caveat_msg = "Relative date preserved without normalization: semantic anchor time (statement or publication time) is ambiguous or unknown."
 
             entities["dates"].append({
                 "raw": raw_match,
                 "normalized": normalized_date,
-                "type": "RELATIVE_DATE" if is_anchored else "RELATIVE_DATE_UNRESOLVED",
+                "type": "RELATIVE_DATE_ANCHORED" if is_anchored else "RELATIVE_DATE_UNRESOLVED",
                 "is_anchored": is_anchored,
-                "caveat": "Relative date anchored using submission intake timestamp" if is_anchored else "Relative date cannot be anchored without an explicit submission timestamp and timezone.",
+                "chosen_reference_timestamp": reference_timestamp.isoformat() if reference_timestamp else None,
+                "reference_timestamp_type": reference_timestamp_type,
+                "timezone": str(reference_timestamp.tzinfo) if has_tz else "UNKNOWN_OR_UNSPECIFIED",
+                "caveat": caveat_msg,
                 "span": [m.start(), m.end()]
             })
 

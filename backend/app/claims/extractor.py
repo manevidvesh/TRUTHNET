@@ -49,7 +49,9 @@ _DIRECT_NEGATION_RE = re.compile(
     r"\b(did\s+not|does\s+not|has\s+not|have\s+not|was\s+not|were\s+not|will\s+not|would\s+not|could\s+not|should\s+not|never|refused\s+to|failed\s+to|not)\b",
     re.IGNORECASE
 )
-_INDIC_NEGATION_RE = re.compile(r"\b(नहीं|ना|इनकार|లేదు|కాదు|నిరాకరించారు)\b")
+_INDIC_NEGATION_RE = re.compile(
+    r"(?<![\u0900-\u097F\u0C00-\u0C7F])(नहीं|ना|इनकार|లేదు|కాదు|నిరాకరించారు)(?![\u0900-\u097F\u0C00-\u0C7F])"
+)
 
 # Complex / Ambiguous Negation Contexts:
 # 1. Litotes / Modal ("not impossible", "did not fail to")
@@ -98,6 +100,8 @@ class ClaimExtractor:
         evidence_submission_id: str,
         source_modality: str = "RAW_TEXT",
         reference_timestamp: Optional[datetime] = None,
+        reference_timestamp_type: Optional[str] = None,
+        reference_timezone: Optional[str] = None,
         extraction_version: int = 1
     ) -> List[Dict[str, Any]]:
         """
@@ -144,7 +148,12 @@ class ClaimExtractor:
 
                 # Check if inner text has verifiable factual indicators or if it's purely subjective
                 is_inner_pure_opinion = any(p.search(inner_text) for p in _PURE_OPINION_PATTERNS)
-                inner_entities = self.normalizer.parse_entities(inner_text, reference_timestamp=reference_timestamp)
+                inner_entities = self.normalizer.parse_entities(
+                    inner_text,
+                    reference_timestamp=reference_timestamp,
+                    reference_timestamp_type=reference_timestamp_type,
+                    reference_timezone=reference_timezone
+                )
                 has_factual_content = (
                     bool(inner_entities.get("dates")) or
                     bool(inner_entities.get("quantities")) or
@@ -185,6 +194,8 @@ class ClaimExtractor:
                         evidence_submission_id=evidence_submission_id,
                         source_modality=source_modality,
                         reference_timestamp=reference_timestamp,
+                        reference_timestamp_type=reference_timestamp_type,
+                        reference_timezone=reference_timezone,
                         extraction_version=extraction_version,
                         subjective_framing=subjective_framing
                     )
@@ -192,7 +203,6 @@ class ClaimExtractor:
                     continue
 
             # Check for evaluative main clause + factual subordinate clause
-            # (e.g. "This is the worst decision because 20 people died")
             eval_match = _EVALUATIVE_CONNECTOR_RE.match(sentence_stripped)
             if eval_match:
                 main_clause = eval_match.group(1).strip()
@@ -200,7 +210,12 @@ class ClaimExtractor:
                 sub_clause = eval_match.group(3).strip()
 
                 is_main_evaluative = any(p.search(main_clause) for p in _PURE_OPINION_PATTERNS) or re.search(r"\b(worst|best|terrible|awesome|bad|good)\b", main_clause, re.IGNORECASE)
-                sub_entities = self.normalizer.parse_entities(sub_clause, reference_timestamp=reference_timestamp)
+                sub_entities = self.normalizer.parse_entities(
+                    sub_clause,
+                    reference_timestamp=reference_timestamp,
+                    reference_timestamp_type=reference_timestamp_type,
+                    reference_timezone=reference_timezone
+                )
                 has_sub_factual = bool(sub_entities.get("quantities")) or bool(sub_entities.get("dates")) or re.search(r"\b(died|killed|injured|collapsed|cost|spent)\b", sub_clause, re.IGNORECASE)
 
                 if is_main_evaluative and has_sub_factual:
@@ -217,6 +232,8 @@ class ClaimExtractor:
                         evidence_submission_id=evidence_submission_id,
                         source_modality=source_modality,
                         reference_timestamp=reference_timestamp,
+                        reference_timestamp_type=reference_timestamp_type,
+                        reference_timezone=reference_timezone,
                         extraction_version=extraction_version,
                         subjective_framing={"evaluative_main_clause": main_clause, "connector": connector}
                     )
@@ -243,6 +260,8 @@ class ClaimExtractor:
                             evidence_submission_id=evidence_submission_id,
                             source_modality=source_modality,
                             reference_timestamp=reference_timestamp,
+                            reference_timestamp_type=reference_timestamp_type,
+                            reference_timezone=reference_timezone,
                             extraction_version=extraction_version
                         )
                         extracted_claims.append(claim_dict)
@@ -263,6 +282,8 @@ class ClaimExtractor:
                         evidence_submission_id=evidence_submission_id,
                         source_modality=source_modality,
                         reference_timestamp=reference_timestamp,
+                        reference_timestamp_type=reference_timestamp_type,
+                        reference_timezone=reference_timezone,
                         extraction_version=extraction_version
                     )
                     extracted_claims.append(claim_dict)
@@ -279,6 +300,8 @@ class ClaimExtractor:
                     evidence_submission_id=evidence_submission_id,
                     source_modality=source_modality,
                     reference_timestamp=reference_timestamp,
+                    reference_timestamp_type=reference_timestamp_type,
+                    reference_timezone=reference_timezone,
                     extraction_version=extraction_version
                 )
                 extracted_claims.append(claim_dict)
@@ -340,7 +363,9 @@ class ClaimExtractor:
         evidence_submission_id: str,
         source_modality: str,
         reference_timestamp: Optional[datetime],
-        extraction_version: int,
+        reference_timestamp_type: Optional[str] = None,
+        reference_timezone: Optional[str] = None,
+        extraction_version: int = 1,
         subjective_framing: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -356,7 +381,12 @@ class ClaimExtractor:
                 span_end = alt_start + len(proposition_text)
 
         normalized_claim = self.normalizer.normalize_text(proposition_text)
-        entities = self.normalizer.parse_entities(proposition_text, reference_timestamp=reference_timestamp)
+        entities = self.normalizer.parse_entities(
+            proposition_text,
+            reference_timestamp=reference_timestamp,
+            reference_timestamp_type=reference_timestamp_type,
+            reference_timezone=reference_timezone
+        )
 
         qualifiers: Dict[str, Any] = {}
         if subjective_framing:
@@ -418,7 +448,6 @@ class ClaimExtractor:
         for attr_pat in _ATTRIBUTION_PATTERNS:
             m = attr_pat.match(working_text)
             if m:
-                # Find speaker and verb spans
                 if len(m.groups()) == 3:
                     speaker = m.group(1).strip()
                     verb = m.group(2).strip()
@@ -435,22 +464,31 @@ class ClaimExtractor:
                 sp_start = source_text.find(speaker, span_start)
                 sp_end = sp_start + len(speaker) if sp_start != -1 else None
 
+                vb_start = source_text.find(verb, sp_end if sp_end is not None else span_start)
+                vb_end = vb_start + len(verb) if vb_start != -1 else None
+
                 prop_start = source_text.find(inner_claim, span_start)
                 prop_end = prop_start + len(inner_claim) if prop_start != -1 else None
+
+                reporting_clause = proposition_text[:prop_start - span_start].strip() if prop_start is not None else f"{speaker} {verb} that"
 
                 qualifiers["attribution"] = {
                     "speaker": speaker,
                     "speaker_span": [sp_start, sp_end] if sp_start is not None else None,
                     "attribution_verb": verb,
+                    "verb_span": [vb_start, vb_end] if vb_start is not None else None,
+                    "reporting_clause": reporting_clause,
+                    "reporting_clause_span": [span_start, prop_start] if prop_start is not None else None,
                     "attributed_proposition": inner_claim,
-                    "proposition_span": [prop_start, prop_end] if prop_start is not None else None
+                    "proposition_span": [prop_start, prop_end] if prop_start is not None else None,
+                    "epistemological_status": "ATTRIBUTED_REPORTING_STATEMENT",
+                    "disclaimer": "This proposition reflects what the named speaker asserted, NOT an independently established or verified fact."
                 }
                 is_attributed = True
                 working_text = inner_claim
                 break
 
         # 4. Scope-Aware Conservative Negation Analysis
-        # Discover all negation markers and their character spans in proposition_text
         negation_markers = []
         for m in _DIRECT_NEGATION_RE.finditer(proposition_text):
             negation_markers.append({"marker": m.group(0), "span": [m.start(), m.end()]})
@@ -460,8 +498,17 @@ class ClaimExtractor:
         polarity_state = "RESOLVED_AFFIRMATIVE"
         polarity_method = "AFFIRMATIVE_DEFAULT"
 
-        if negation_markers:
-            # Check for complex / ambiguous negation scopes
+        # Correct polarity semantics for unsupported languages (Hindi, Telugu)
+        if lang_res.language in ("hi", "te"):
+            polarity_state = "NOT_ANALYZED"
+            polarity_method = "UNSUPPORTED_LANGUAGE_POLARITY"
+            qualifiers["negation"] = {
+                "polarity_state": polarity_state,
+                "polarity_method": polarity_method,
+                "markers": negation_markers,
+                "note": f"Linguistic polarity not analyzed: grammatical dependency parser unavailable for {lang_res.language.upper()}. Absence of English negation markers does NOT imply affirmative truth."
+            }
+        elif negation_markers:
             if _NESTED_SPEECH_ACT_RE.search(proposition_text):
                 polarity_state = "UNRESOLVED_POLARITY"
                 polarity_method = "NESTED_SPEECH_ACT_NEGATION"
@@ -490,7 +537,6 @@ class ClaimExtractor:
                     "note": "Epistemic absence of evidence does not equal logical affirmation; polarity marked unresolved."
                 }
             elif len(negation_markers) > 1:
-                # Multiple negation markers without clear template -> do not guess polarity!
                 polarity_state = "UNRESOLVED_POLARITY"
                 polarity_method = "MULTIPLE_NEGATION_UNRESOLVED"
                 qualifiers["negation"] = {
@@ -500,7 +546,6 @@ class ClaimExtractor:
                     "note": "Multiple negation markers detected with ambiguous cross-clause scope; polarity marked unresolved."
                 }
             else:
-                # Clear single direct clausal negation
                 polarity_state = "RESOLVED_NEGATIVE"
                 polarity_method = "DIRECT_CLAUSAL_NEGATION"
                 qualifiers["negation"] = {
@@ -529,20 +574,15 @@ class ClaimExtractor:
         extraction_state: str = "EXTRACTED_CLAIM_CANDIDATE"
         extraction_method: str = "HYBRID_DETERMINISTIC_SYNTACTIC"
 
-        # Check for ambiguous sentence structures (e.g. gerunds or unresolvable roles like "Flying planes can be dangerous")
         if re.search(r"^\s*(?:flying\s+planes|cooking\s+apples|hunting\s+lions)\b", working_text, re.IGNORECASE):
             extraction_state = "UNRESOLVED_STATEMENT"
             extraction_method = "AMBIGUOUS_STRUCTURE_PARSER"
             uncertainty_notes = "Syntactic attachment ambiguous; propositional roles not forced into SPO."
 
         elif lang_res.language in ("hi", "te"):
-            # REFINED MULTILINGUAL SEMANTICS:
-            # For Hindi and Telugu: A factual sentence is an EXTRACTED_CLAIM_CANDIDATE.
-            # Do NOT label STRUCTURED_PROPOSITION because semantic dependency parsing is unsupported.
             extraction_state = "EXTRACTED_CLAIM_CANDIDATE"
             extraction_method = "DETERMINISTIC_MULTILINGUAL_CANDIDATE"
             uncertainty_notes = f"UNSUPPORTED_LANGUAGE_PARSER: Semantic proposition roles not structured for {lang_res.language.upper()}; factual candidate preserved with verified entity spans."
-            # Do NOT invent dummy predicates like 'asserts_factual_event'
             subject = None
             predicate = None
             obj = None

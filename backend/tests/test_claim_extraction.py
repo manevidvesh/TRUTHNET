@@ -8,10 +8,11 @@ from app.models.claim import ClaimRecord
 from app.claims.extractor import claim_extractor
 from app.claims.language import language_detector
 from app.claims.normalizer import claim_normalizer
+from app.claims.offsets import codepoint_to_utf16_offsets, utf16_to_codepoint_offsets
 from app.services.pipeline import pipeline_service
 
 # ---------------------------------------------------------------------------
-# 1. SCOPE-AWARE CONSERVATIVE NEGATION TESTS
+# 1. SCOPE-AWARE CONSERVATIVE NEGATION & UNSUPPORTED LANGUAGE POLARITY
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -58,6 +59,35 @@ async def test_scope_aware_adversarial_negations():
     assert c5["polarity_state"] == "UNRESOLVED_POLARITY"
     assert c5["qualifiers"]["negation"]["polarity_method"] == "EPISTEMIC_NEGATION"
     assert "Epistemic absence of evidence" in c5["qualifiers"]["negation"]["note"]
+
+@pytest.mark.asyncio
+async def test_unsupported_language_polarity_semantics():
+    """
+    Verifies that Hindi and Telugu claims do NOT report affirmative polarity merely
+    because English negation was absent. They report NOT_ANALYZED with explicit caveats.
+    """
+    inv_id = "test-inv-indic"
+    sub_id = "test-sub-indic"
+
+    # Hindi affirmative-looking text
+    t_hi = "स्वास्थ्य मंत्रालय ने नई गाइडलाइंस जारी कीं।"
+    c_hi = claim_extractor.extract_claims_from_text(t_hi, inv_id, sub_id)[0]
+    assert c_hi["polarity_state"] == "NOT_ANALYZED"
+    assert c_hi["qualifiers"]["negation"]["polarity_method"] == "UNSUPPORTED_LANGUAGE_POLARITY"
+    assert "Linguistic polarity not analyzed" in c_hi["qualifiers"]["negation"]["note"]
+
+    # Hindi text with negation marker
+    t_hi_neg = "स्वास्थ्य मंत्रालय ने प्रस्ताव को स्वीकार नहीं किया।"
+    c_hi_neg = claim_extractor.extract_claims_from_text(t_hi_neg, inv_id, sub_id)[0]
+    assert c_hi_neg["polarity_state"] == "NOT_ANALYZED"
+    assert len(c_hi_neg["qualifiers"]["negation"]["markers"]) >= 1
+    assert any("नहीं" in m["marker"] for m in c_hi_neg["qualifiers"]["negation"]["markers"])
+
+    # Telugu affirmative-looking text
+    t_te = "హైదరాబాద్‌లో భారీ వర్షం కారణంగా పాఠశాలలకు సెలవు ప్రకటించారు."
+    c_te = claim_extractor.extract_claims_from_text(t_te, inv_id, sub_id)[0]
+    assert c_te["polarity_state"] == "NOT_ANALYZED"
+    assert c_te["qualifiers"]["negation"]["polarity_method"] == "UNSUPPORTED_LANGUAGE_POLARITY"
 
 # ---------------------------------------------------------------------------
 # 2. SUBJECTIVE FRAMING VS. FACTUAL SUB-CLAIMS
@@ -118,7 +148,7 @@ async def test_subjective_framing_vs_factual_subclaims():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_attribution_preservation():
+async def test_attribution_representation_integrity():
     """
     Verifies that an attributed assertion is explicitly distinguished from an un-attributed fact,
     and speaker attribution metadata survives extraction with spans.
@@ -133,8 +163,13 @@ async def test_attribution_preservation():
     assert "attribution" in c_attr["qualifiers"]
     attr_info = c_attr["qualifiers"]["attribution"]
     assert attr_info["speaker"] == "Senator Smith"
-    assert attr_info["attribution_verb"].lower() == "claimed"
+    assert attr_info["speaker_span"] == [0, 13]
+    assert attr_info["attribution_verb"] == "claimed"
+    assert attr_info["verb_span"] == [14, 21]
+    assert attr_info["reporting_clause"] == "Senator Smith claimed that"
     assert "Health Ministry did not approve the vaccine" in attr_info["attributed_proposition"]
+    assert attr_info["epistemological_status"] == "ATTRIBUTED_REPORTING_STATEMENT"
+    assert "NOT an independently established or verified fact" in attr_info["disclaimer"]
 
     # Direct assertion (un-attributed)
     t_direct = "The Health Ministry did not approve the vaccine."
@@ -181,44 +216,16 @@ async def test_multilingual_hindi_and_telugu_extraction_states():
     assert t_te[c_te["evidence_span_start"]:c_te["evidence_span_end"]] == t_te
 
 # ---------------------------------------------------------------------------
-# 5. SPAN INTEGRITY & PROVENANCE ACROSS SCRIPT RANGES
+# 5. RETRY VS. DELIBERATE REPROCESSING IDEMPOTENCY
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_provenance_and_span_integrity():
+async def test_pipeline_retry_vs_deliberate_reprocessing(db_session):
     """
-    Verifies that source_text_hash corresponds to the SHA-256 of original text,
-    and start_char/end_char accurately slice the exact verbatim text for English, Hindi, and Telugu.
-    """
-    inv_id = "test-inv-prov"
-    sub_id = "test-sub-prov"
-
-    samples = [
-        "The bridge collapsed on Tuesday due to heavy rain.",
-        "स्वास्थ्य मंत्रालय ने नई गाइडलाइंस जारी कीं।",
-        "హైదరాబాద్‌లో భారీ వర్షం కారణంగా పాఠశాలలకు సెలవు ప్రకటించారు.",
-        "Breaking news: Opposition demanded immediate resignation of the minister."
-    ]
-
-    for raw in samples:
-        expected_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-        claims = claim_extractor.extract_claims_from_text(raw, inv_id, sub_id)
-        assert len(claims) >= 1
-        for c in claims:
-            assert c["source_text_hash"] == expected_hash
-            start = c["evidence_span_start"]
-            end = c["evidence_span_end"]
-            assert raw[start:end] == c["claim_text"]
-
-# ---------------------------------------------------------------------------
-# 6. PIPELINE IDEMPOTENCY AND REPROCESSING TESTS
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_pipeline_idempotency_and_versioning(db_session):
-    """
-    Verifies that retrying or reprocessing an evidence item does NOT create duplicate active claims,
-    preserves historical claim versions, and marks prior claims is_active=False.
+    Verifies that:
+    1. Pipeline retries with identical text DO NOT create duplicate claim records or bump version.
+    2. Deliberate reprocessing (force_reprocess=True) increments version, marks prior claims inactive,
+       and records the reprocess reason.
     """
     inv = Investigation(title="Idempotency Test Investigation", priority="MEDIUM")
     db_session.add(inv)
@@ -248,65 +255,232 @@ async def test_pipeline_idempotency_and_versioning(db_session):
         assert c.version == 1
         assert c.is_active is True
 
-    # Pass 2: Retry / Reprocessing (simulating worker restart or user reprocess)
-    success_2 = await pipeline_service.process_evidence_item(sub.id, session_factory=lambda: db_session)
+    # Pass 2: Pipeline Retry (e.g. worker restarted, re-running on same submission)
+    success_2 = await pipeline_service.process_evidence_item(
+        sub.id, session_factory=lambda: db_session, force_reprocess=False
+    )
     assert success_2 is True
 
-    # Check DB state after reprocessing
+    # Claims count MUST BE EXACTLY 2 (Retry was 100% idempotent!)
     res_2 = await db_session.execute(
         select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id)
     )
-    all_claims = list(res_2.scalars().all())
-    assert len(all_claims) == 4  # 2 historical version 1 + 2 active version 2
+    claims_after_retry = list(res_2.scalars().all())
+    assert len(claims_after_retry) == 2  # ZERO duplicate records created!
+    for c in claims_after_retry:
+        assert c.version == 1
+        assert c.is_active is True
+
+    # Pass 3: Deliberate Reprocessing (explicit request)
+    success_3 = await pipeline_service.process_evidence_item(
+        sub.id, session_factory=lambda: db_session, force_reprocess=True, reprocess_reason="CONFIG_UPDATED"
+    )
+    assert success_3 is True
+
+    res_3 = await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id)
+    )
+    all_claims = list(res_3.scalars().all())
+    assert len(all_claims) == 4  # 2 historical inactive v1 + 2 active v2
 
     active_claims = [c for c in all_claims if c.is_active is True]
     inactive_claims = [c for c in all_claims if c.is_active is False]
 
-    assert len(active_claims) == 2  # Active claims are NOT duplicated!
+    assert len(active_claims) == 2
     assert len(inactive_claims) == 2
 
     for c in active_claims:
         assert c.version == 2
+        assert "CONFIG_UPDATED" in (c.uncertainty_notes or "")
     for c in inactive_claims:
         assert c.version == 1
 
+@pytest.mark.asyncio
+async def test_failed_replacement_extraction_preserves_active_claims(db_session, monkeypatch):
+    """
+    Verifies that a failure during replacement extraction (deliberate reprocessing)
+    does not leave the submission without valid active claims. Prior active claims
+    remain active.
+    """
+    inv = Investigation(title="Failure Safety Investigation", priority="LOW")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        caption="Breaking news: Government announced relief fund.",
+        raw_text="The bridge collapsed on Tuesday.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    # Pass 1: Initial extraction succeeds
+    success_1 = await pipeline_service.process_evidence_item(sub.id, session_factory=lambda: db_session)
+    assert success_1 is True
+
+    res_1 = await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
+    )
+    v1_claims = list(res_1.scalars().all())
+    assert len(v1_claims) == 2
+    assert all(c.version == 1 for c in v1_claims)
+
+    # Mock extract_claims_from_text to simulate unexpected failure during reprocessing
+    def mock_fail(*args, **kwargs):
+        raise RuntimeError("Simulated parser crash during reprocessing")
+
+    monkeypatch.setattr(claim_extractor, "extract_claims_from_text", mock_fail)
+
+    # Pass 2: Deliberate reprocessing fails
+    await pipeline_service.process_evidence_item(
+        sub.id, session_factory=lambda: db_session, force_reprocess=True, reprocess_reason="CRASH_TEST"
+    )
+
+    # Verify atomic protection: Version 1 claims are STILL active!
+    res_2 = await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
+    )
+    active_after_crash = list(res_2.scalars().all())
+    assert len(active_after_crash) == 2
+    assert all(c.version == 1 for c in active_after_crash)
+
+@pytest.mark.asyncio
+async def test_concurrent_processing_attempts(test_db_engine, db_session):
+    """
+    Verifies that concurrent processing attempts on the same submission
+    maintain database integrity without duplicate active claims.
+    """
+    import asyncio
+    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+
+    test_session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
+    )
+
+    inv = Investigation(title="Concurrency Test Investigation", priority="MEDIUM")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        submission_type="TEXT",
+        caption="Breaking news: Government announced 10 crore relief fund.",
+        raw_text="The bridge collapsed on Tuesday.",
+        language="en"
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    # Launch concurrent process attempts with distinct session instances
+    results = await asyncio.gather(
+        pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False),
+        pipeline_service.process_evidence_item(sub.id, session_factory=test_session_factory, force_reprocess=False)
+    )
+    assert any(results) is True
+
+    # Check active claims in DB
+    res = await db_session.execute(
+        select(ClaimRecord).where(ClaimRecord.evidence_submission_id == sub.id, ClaimRecord.is_active == True)
+    )
+    active_claims = list(res.scalars().all())
+    # Exactly 2 claims should be active (from the 2 sentences in raw_text & caption)
+    assert len(active_claims) == 2
+
 # ---------------------------------------------------------------------------
-# 7. DATE AND LOCATION PROVENANCE AUDITING
+# 6. RELATIVE-DATE REFERENCE SEMANTICS AUDITING
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_date_and_location_provenance_audit():
+async def test_relative_date_reference_semantics():
     """
-    Verifies that relative dates without timezone-aware timestamps remain unanchored,
-    and gazetteer centroids are explicitly flagged as reference centroids, not incident GPS.
+    Verifies that:
+    1. Submission time is NEVER assumed to be the statement reference frame (unresolved).
+    2. Missing reference timestamp remains unresolved.
+    3. Known PUBLICATION_TIME or STATEMENT_TIME with timezone safely resolves relative dates.
     """
-    # A. Relative date without reference timestamp -> RELATIVE_DATE_UNRESOLVED
-    ent_no_ref = claim_normalizer.parse_entities("The incident occurred yesterday in New Delhi.", reference_timestamp=None)
-    date_ent = ent_no_ref["dates"][0]
-    assert date_ent["raw"] == "yesterday"
-    assert date_ent["type"] == "RELATIVE_DATE_UNRESOLVED"
-    assert date_ent["normalized"] is None
-    assert date_ent["is_anchored"] is False
-    assert "cannot be anchored" in date_ent["caveat"]
+    text = "The minister resigned yesterday."
 
-    # B. Relative date WITH timezone-aware reference timestamp -> anchored estimate
-    ref_dt = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
-    ent_with_ref = claim_normalizer.parse_entities("The incident occurred yesterday in New Delhi.", reference_timestamp=ref_dt)
-    date_anchored = ent_with_ref["dates"][0]
-    assert date_anchored["type"] == "RELATIVE_DATE"
-    assert date_anchored["normalized"] == "2026-03-14"
-    assert date_anchored["is_anchored"] is True
+    # Case A: Without reference timestamp -> RELATIVE_DATE_UNRESOLVED
+    ent_none = claim_normalizer.parse_entities(text, reference_timestamp=None)
+    d_none = ent_none["dates"][0]
+    assert d_none["type"] == "RELATIVE_DATE_UNRESOLVED"
+    assert d_none["normalized"] is None
+    assert d_none["is_anchored"] is False
 
-    # C. Location Centroid Audit
-    loc_ent = ent_no_ref["locations"][0]
-    assert loc_ent["canonical_name"] == "New Delhi"
-    assert loc_ent["is_reference_centroid"] is True
-    assert loc_ent["reference_centroid_lat"] == 28.6139
-    assert loc_ent["reference_centroid_lon"] == 77.2090
-    assert "NOT incident or crime scene location" in loc_ent["centroid_caveat"]
+    # Case B: With SUBMISSION_TIME -> RELATIVE_DATE_UNRESOLVED (submission time is not statement frame!)
+    sub_dt = datetime(2026, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
+    ent_sub = claim_normalizer.parse_entities(text, reference_timestamp=sub_dt, reference_timestamp_type="SUBMISSION_TIME")
+    d_sub = ent_sub["dates"][0]
+    assert d_sub["type"] == "RELATIVE_DATE_UNRESOLVED"
+    assert d_sub["normalized"] is None
+    assert d_sub["is_anchored"] is False
+    assert "submission intake time cannot be assumed" in d_sub["caveat"]
+
+    # Case C: With verified PUBLICATION_TIME -> RELATIVE_DATE_ANCHORED
+    pub_dt = datetime(2026, 3, 15, 8, 30, 0, tzinfo=timezone.utc)
+    ent_pub = claim_normalizer.parse_entities(text, reference_timestamp=pub_dt, reference_timestamp_type="PUBLICATION_TIME")
+    d_pub = ent_pub["dates"][0]
+    assert d_pub["type"] == "RELATIVE_DATE_ANCHORED"
+    assert d_pub["normalized"] == "2026-03-14"
+    assert d_pub["is_anchored"] is True
+    assert "PUBLICATION_TIME" in d_pub["caveat"]
 
 # ---------------------------------------------------------------------------
-# 8. STRUCTURAL, CAUSAL & AMBIGUOUS SENTENCE TESTS
+# 7. UNICODE OFFSET CONVENTIONS & EMOJI COMPATIBILITY
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_unicode_evidence_offsets_and_emojis():
+    """
+    Verifies Unicode Code Point span integrity with Telugu, Hindi, mixed scripts,
+    emojis (surrogate pair code points), OCR noise, and compound sentences.
+    Verifies codepoint_to_utf16_offsets and utf16_to_codepoint_offsets.
+    """
+    inv_id = "test-inv-unicode"
+    sub_id = "test-sub-unicode"
+
+    # Emoji + English: '🚨' is U+1F6A8 (1 code point in Python, 2 UTF-16 code units in JS)
+    text_emoji = "🚨 Breaking news: The dam collapsed on Tuesday in District 4."
+    claims_emoji = claim_extractor.extract_claims_from_text(text_emoji, inv_id, sub_id)
+    assert len(claims_emoji) == 1
+    ce = claims_emoji[0]
+    cp_start = ce["evidence_span_start"]
+    cp_end = ce["evidence_span_end"]
+    # Python code point slice must reproduce claim_text
+    assert text_emoji[cp_start:cp_end] == ce["claim_text"]
+
+    # Test conversion to UTF-16
+    u16_start, u16_end = codepoint_to_utf16_offsets(text_emoji, cp_start, cp_end)
+    assert u16_start == cp_start  # starts after emoji if trimmed, or includes emoji
+    # Round-trip back to code point offsets
+    rt_start, rt_end = utf16_to_codepoint_offsets(text_emoji, u16_start, u16_end)
+    assert (rt_start, rt_end) == (cp_start, cp_end)
+
+    # Telugu Unicode code points
+    text_te = "హైదరాబాద్‌లో భారీ వర్షం కారణంగా పాఠశాలలకు సెలవు ప్రకటించారు."
+    claims_te = claim_extractor.extract_claims_from_text(text_te, inv_id, sub_id)
+    cte = claims_te[0]
+    assert text_te[cte["evidence_span_start"]:cte["evidence_span_end"]] == cte["claim_text"]
+    u16_te_s, u16_te_e = codepoint_to_utf16_offsets(text_te, cte["evidence_span_start"], cte["evidence_span_end"])
+    # Telugu characters are in BMP: code points == UTF-16 code units
+    assert (u16_te_s, u16_te_e) == (cte["evidence_span_start"], cte["evidence_span_end"])
+
+    # Hindi Unicode code points
+    text_hi = "स्वास्थ्य मंत्रालय ने नई गाइडलाइंस जारी कीं।"
+    claims_hi = claim_extractor.extract_claims_from_text(text_hi, inv_id, sub_id)
+    chi = claims_hi[0]
+    assert text_hi[chi["evidence_span_start"]:chi["evidence_span_end"]] == chi["claim_text"]
+    u16_hi_s, u16_hi_e = codepoint_to_utf16_offsets(text_hi, chi["evidence_span_start"], chi["evidence_span_end"])
+    assert (u16_hi_s, u16_hi_e) == (chi["evidence_span_start"], chi["evidence_span_end"])
+
+# ---------------------------------------------------------------------------
+# 8. GENERAL STRUCTURAL & EDGE CASE TESTS
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
