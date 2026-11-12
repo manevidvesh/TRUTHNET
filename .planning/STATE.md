@@ -1,10 +1,10 @@
 ---
 gsd_state_version: '1.0'
-status: planning
+status: ready_to_execute
 progress:
   total_phases: 12
   completed_phases: 0
-  total_plans: 0
+  total_plans: 3
   completed_plans: 0
   percent: 0
 ---
@@ -21,9 +21,9 @@ See: .planning/PROJECT.md (updated 2026-11-13)
 ## Current Position
 
 Phase: 1 of 12 (Foundation & Vertical Slice Intake Pipeline)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-11-13 — Project initialized with fine granularity (12 phases) and MVP mode.
+Plan: 0 of 3 in current phase (01-01, 01-02, 01-03 created)
+Status: Ready to execute
+Last activity: 2026-11-13 — Phase 1 research, validation, walking skeleton, and 3 plans generated.
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -38,7 +38,7 @@ Progress: [░░░░░░░░░░] 0%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01-foundation-vertical-slice-intake-pipeline | 0/3 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: None
@@ -57,6 +57,8 @@ Recent decisions affecting current work:
 - [Init]: Separate MediaAsset from EvidenceSubmission to preserve conflicting context on identical media files.
 - [Init]: Discrete 6-level matching classifications for historical media.
 - [Init]: Fine granularity (12 phases) with MVP mode for rapid vertical validation.
+- [Phase 1]: Content-addressed storage under data/uploads/{hash[:2]}/{hash}.{ext} with streaming SHA-256 calculation.
+- [Phase 1]: Per-item fault isolation (PENDING, PROCESSING, COMPLETED, FAILED) preventing item failures from aborting investigations.
 
 ### Pending Todos
 
@@ -66,16 +68,12 @@ None yet.
 
 None yet.
 
-## Deferred Items
+## Deferred Ideas
 
-Items acknowledged and deferred at milestone close, most recent first:
-
-| Category | Item | Status | Deferred At | Milestone |
-|----------|------|--------|-------------|-----------|
-| *(none)* | | | | |
+None yet.
 
 ## Session Continuity
 
-Last session: 2026-11-13 01:35
-Stopped at: Project initialization complete. Ready for Phase 1 planning/discussion.
+Last session: 2026-11-13 01:40
+Stopped at: Phase 1 planning complete. Ready to execute 01-01-PLAN.md.
 Resume file: None

@@ -34,7 +34,12 @@ TRUTHNET AI is built in 12 focused phases delivering a complete multimodal misin
   1. User can create, list, view, and manage investigations in SQLite database.
   2. User can submit multimodal evidence items (text, images, audio, video, URLs) with immediate SHA-256 calculation and metadata recording.
   3. Evidence items process asynchronously and failures on one item do not crash or abort the parent investigation.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 01-01: Foundation, SQLite WAL Database Setup, and Investigation Lifecycle
+- [ ] 01-02: Storage Engine, MediaAsset/EvidenceSubmission Decoupling, and Streaming Multimodal Intake
+- [ ] 01-03: Asynchronous Processing Pipeline, Fault Isolation, and Duplicate File Resilience
 
 ### Phase 2: Multimodal Extraction & Media Preprocessing
 **Goal**: Implement technical metadata extraction, OCR, speech-to-text transcription, and video keyframe sampling.
@@ -170,7 +175,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Vertical Slice Intake Pipeline | 0/TBD | Not started | - |
+| 1. Foundation & Vertical Slice Intake Pipeline | 0/3 | In progress | - |
 | 2. Multimodal Extraction & Media Preprocessing | 0/TBD | Not started | - |
 | 3. Persistent Historical Media Indexing & Perceptual Hashing | 0/TBD | Not started | - |
 | 4. Historical vs Current Contextual Verification Engine | 0/TBD | Not started | - |
