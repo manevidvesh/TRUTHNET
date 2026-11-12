@@ -32,10 +32,16 @@ ENV/
 htmlcov/
 
 # Local databases and uploads
+*.db
+*.db-shm
+*.db-wal
 data/*.db*
+**/data/*.db*
 data/uploads/*
+**/data/uploads/*
 !data/uploads/.gitkeep
-data/.gitkeep
+!**/data/uploads/.gitkeep
+!data/.gitkeep
 
 # IDEs
 .vscode/
