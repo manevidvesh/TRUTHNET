@@ -226,7 +226,7 @@ async def test_source_retrieval_success():
 async def test_source_retrieval_inaccessible():
     """8. Handles HTTP 404, 500, and connection error without unhandled crash."""
     scraper = WebScraper()
-    with patch("httpx.AsyncClient.get") as mock_get:
+    with patch("app.retrieval.scraper.is_safe_url", return_value=(True, "Allowed")), patch("httpx.AsyncClient.get") as mock_get:
         # 404
         mock_get.return_value = httpx.Response(status_code=404, text="Not Found", request=httpx.Request("GET", "https://example.com/not-found"))
         res_404 = await scraper.scrape_url("https://example.com/not-found")
@@ -268,7 +268,7 @@ async def test_source_retrieval_date_extraction():
     <body><p>News body text here.</p></body>
     </html>
     """
-    with patch("httpx.AsyncClient.get") as mock_get:
+    with patch("app.retrieval.scraper.is_safe_url", return_value=(True, "Allowed")), patch("httpx.AsyncClient.get") as mock_get:
         mock_get.return_value = httpx.Response(status_code=200, text=html, request=httpx.Request("GET", "https://example.com/dates"))
         data = await scraper.scrape_url("https://example.com/dates")
         assert data.published_date == "2026-04-10T11:22:33Z"
@@ -279,7 +279,7 @@ async def test_source_retrieval_missing_metadata():
     """11. Page without metadata parsed gracefully with fallback title and None authors."""
     scraper = WebScraper()
     html = "<html><body><p>Bare paragraph without any head metadata or author tags.</p></body></html>"
-    with patch("httpx.AsyncClient.get") as mock_get:
+    with patch("app.retrieval.scraper.is_safe_url", return_value=(True, "Allowed")), patch("httpx.AsyncClient.get") as mock_get:
         mock_get.return_value = httpx.Response(status_code=200, text=html, request=httpx.Request("GET", "https://example.com/bare"))
         data = await scraper.scrape_url("https://example.com/bare")
         assert data.retrieval_status in [RetrievalStatus.SUCCESS, RetrievalStatus.SUCCESS.value]
@@ -314,7 +314,7 @@ async def test_claimreview_ldjson_parsing():
     <body><p>Fact-checking team analyzed the video and confirmed the dam is intact.</p></body>
     </html>
     """
-    with patch("httpx.AsyncClient.get") as mock_get:
+    with patch("app.retrieval.scraper.is_safe_url", return_value=(True, "Allowed")), patch("httpx.AsyncClient.get") as mock_get:
         mock_get.return_value = httpx.Response(status_code=200, text=html, request=httpx.Request("GET", "https://factcheck.org/dam-claim"))
         data = await scraper.scrape_url("https://factcheck.org/dam-claim")
         assert data.claim_review_metadata is not None

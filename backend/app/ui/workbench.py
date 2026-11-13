@@ -1147,6 +1147,8 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 <button id="upload-tab-text-btn" class="tab-btn" onclick="switchUploadMode('text')">Text Claim</button>
             </div>
             
+            <div id="upload-feedback" style="display: none; padding: 10px 14px; border-radius: 6px; font-size: 12px; margin: 14px 20px 0 20px;"></div>
+
             <!-- File Upload Form -->
             <form id="form-upload-file" onsubmit="handleUploadFile(event)">
                 <div class="modal-body">
@@ -1171,7 +1173,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modal-upload')">Cancel</button>
-                    <button type="submit" class="btn btn-cyan">Upload & Process</button>
+                    <button type="submit" id="btn-upload-file" class="btn btn-cyan">Upload & Process</button>
                 </div>
             </form>
 
@@ -1195,7 +1197,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('modal-upload')">Cancel</button>
-                    <button type="submit" class="btn btn-cyan">Submit Claim</button>
+                    <button type="submit" id="btn-upload-text" class="btn btn-cyan">Submit Claim</button>
                 </div>
             </form>
         </div>
@@ -1859,7 +1861,35 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         function closeModal(id) { document.getElementById(id).classList.remove("open"); }
 
         function openNewCaseModal() { openModal("modal-new-case"); }
-        function openUploadModal() { openModal("modal-upload"); }
+        function openUploadModal() {
+            clearUploadFeedback();
+            openModal("modal-upload");
+        }
+
+        function showUploadFeedback(msg, isError) {
+            const box = document.getElementById("upload-feedback");
+            if (!box) return;
+            box.style.display = "block";
+            if (isError) {
+                box.style.background = "rgba(244, 63, 94, 0.15)";
+                box.style.border = "1px solid var(--red)";
+                box.style.color = "var(--red)";
+                box.innerText = "✕ " + msg;
+            } else {
+                box.style.background = "rgba(16, 185, 129, 0.15)";
+                box.style.border = "1px solid var(--green)";
+                box.style.color = "var(--green)";
+                box.innerText = msg;
+            }
+        }
+
+        function clearUploadFeedback() {
+            const box = document.getElementById("upload-feedback");
+            if (box) {
+                box.style.display = "none";
+                box.innerText = "";
+            }
+        }
 
         async function openCaseSwitcherModal() {
             openModal("modal-switcher");
@@ -1935,61 +1965,142 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         async function handleUploadFile(e) {
             e.preventDefault();
+            clearUploadFeedback();
+
+            if (!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") {
+                showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
+                return;
+            }
+
             const fileInput = document.getElementById("upload-file-input");
-            if (!fileInput.files.length) return;
+            if (!fileInput.files || !fileInput.files.length) {
+                showUploadFeedback("Please select a media file to upload.", true);
+                return;
+            }
+
+            const submitBtn = document.getElementById("btn-upload-file");
+            const origText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Uploading & Ingesting...";
 
             const formData = new FormData();
-            formData.append("investigation_id", currentInvId);
             formData.append("file", fileInput.files[0]);
-            formData.append("caption", document.getElementById("upload-file-caption").value);
-            formData.append("claimed_date", document.getElementById("upload-file-date").value);
-            formData.append("claimed_location", document.getElementById("upload-file-location").value);
+
+            const caption = document.getElementById("upload-file-caption").value.trim();
+            const date = document.getElementById("upload-file-date").value.trim();
+            const location = document.getElementById("upload-file-location").value.trim();
+
+            if (caption) formData.append("caption", caption);
+            if (date) formData.append("claimed_date", date);
+            if (location) formData.append("claimed_location", location);
 
             try {
-                const res = await fetch("/api/v1/evidence/upload", {
+                const res = await fetch(`/api/v1/investigations/${encodeURIComponent(currentInvId)}/evidence/upload`, {
                     method: "POST",
                     body: formData
                 });
 
                 if (res.ok) {
-                    closeModal("modal-upload");
-                    alert("Evidence uploaded and queued for multimodal processing.");
+                    const data = await res.json();
+                    showUploadFeedback(`✓ Evidence ingested successfully (ID: ${data.id.substring(0, 8)}...). Dispatched for pipeline processing.`, false);
+                    document.getElementById("form-upload-file").reset();
                     await loadAllCaseData();
+                    setTimeout(() => {
+                        closeModal("modal-upload");
+                        clearUploadFeedback();
+                        switchTab("evidence");
+                    }, 1200);
                 } else {
-                    alert("Evidence upload failed.");
+                    let errorMsg = "Upload rejected by server";
+                    try {
+                        const errData = await res.json();
+                        if (errData && errData.detail) {
+                            errorMsg = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
+                        }
+                    } catch (_) {
+                        if (res.status === 413) errorMsg = "File exceeds maximum permitted size (100MB)";
+                        else if (res.status === 415) errorMsg = "Unsupported media file format";
+                        else if (res.status === 400) errorMsg = "Submitted file is empty (0 bytes) or corrupted";
+                        else if (res.status === 404) errorMsg = `Investigation '${currentInvId}' not found`;
+                        else if (res.status >= 500) errorMsg = "Server storage or ingestion processing failure";
+                        else errorMsg = `Server returned HTTP ${res.status}: ${res.statusText}`;
+                    }
+                    showUploadFeedback(`Upload failed: ${errorMsg}`, true);
                 }
             } catch (err) {
-                alert("Upload error: " + err.message);
+                showUploadFeedback(`Network connection error: ${err.message}`, true);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = origText;
             }
         }
 
         async function handleUploadText(e) {
             e.preventDefault();
-            const text = document.getElementById("upload-text-content").value;
-            const date = document.getElementById("upload-text-date").value;
-            const loc = document.getElementById("upload-text-location").value;
+            clearUploadFeedback();
+
+            if (!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") {
+                showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
+                return;
+            }
+
+            const text = document.getElementById("upload-text-content").value.trim();
+            if (!text) {
+                showUploadFeedback("Please provide the text claim.", true);
+                return;
+            }
+
+            const submitBtn = document.getElementById("btn-upload-text");
+            const origText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Submitting Claim...";
+
+            const date = document.getElementById("upload-text-date").value.trim();
+            const loc = document.getElementById("upload-text-location").value.trim();
+
+            const payload = {
+                raw_text: text,
+                caption: text.substring(0, 100)
+            };
+            if (date) payload.claimed_date = date;
+            if (loc) payload.claimed_location = loc;
 
             try {
-                const res = await fetch("/api/v1/evidence/text", {
+                const res = await fetch(`/api/v1/investigations/${encodeURIComponent(currentInvId)}/evidence/claim`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        investigation_id: currentInvId,
-                        text: text,
-                        claimed_date: date,
-                        claimed_location: loc
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (res.ok) {
-                    closeModal("modal-upload");
-                    alert("Text claim submitted and queued for extraction.");
+                    const data = await res.json();
+                    showUploadFeedback(`✓ Text claim submitted successfully (ID: ${data.id.substring(0, 8)}...). Dispatched for extraction.`, false);
+                    document.getElementById("form-upload-text").reset();
                     await loadAllCaseData();
+                    setTimeout(() => {
+                        closeModal("modal-upload");
+                        clearUploadFeedback();
+                        switchTab("claims");
+                    }, 1200);
                 } else {
-                    alert("Submission failed.");
+                    let errorMsg = "Submission rejected by server";
+                    try {
+                        const errData = await res.json();
+                        if (errData && errData.detail) {
+                            errorMsg = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
+                        }
+                    } catch (_) {
+                        if (res.status === 400) errorMsg = "Either raw_text or source_url must be provided";
+                        else if (res.status === 404) errorMsg = `Investigation '${currentInvId}' not found`;
+                        else errorMsg = `Server returned HTTP ${res.status}: ${res.statusText}`;
+                    }
+                    showUploadFeedback(`Claim submission failed: ${errorMsg}`, true);
                 }
             } catch (err) {
-                alert("Submission error: " + err.message);
+                showUploadFeedback(`Network connection error: ${err.message}`, true);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = origText;
             }
         }
 
