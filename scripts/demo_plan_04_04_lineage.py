@@ -40,6 +40,7 @@ from app.schemas.relationship import (
 )
 from app.lineage.graph_engine import LineageGraphEngine
 from app.lineage.assessment_engine import ExplainableAssessmentEngine
+from app.api.v1.investigations import build_investigation_report_data
 
 
 def utc_now() -> datetime:
@@ -64,11 +65,12 @@ async def run_demonstration():
     async with session_factory() as session:
         print("\n[Step 1] Constructing Multi-Signal Investigation Scenario...")
         now = utc_now()
+        today_str = now.strftime("%Y-%m-%d")
 
-        # 1. Create Investigation
+        # 1. Create Investigation with explicit simulation flag
         inv = Investigation(
-            title="INV-2026-088: Viral Flood Devastation Report in Cyberabad Tech Corridor",
-            description="Investigating viral social media claims alleging unprecedented catastrophic flooding in Cyberabad.",
+            title="INV-2026-088 [SIMULATED — NOT LIVE EXTERNAL EVIDENCE]: Viral Flood Devastation Report in Cyberabad Tech Corridor",
+            description="[SIMULATED] Investigating recirculated 2020 imagery falsely alleged as today's catastrophic flooding in Cyberabad.",
             priority="HIGH",
             status="ACTIVE"
         )
@@ -102,7 +104,7 @@ async def run_demonstration():
             submission_type="IMAGE",
             caption="Devastating unprecedented floods submerge Cyberabad tech corridor today!",
             claimed_event="Cyberabad Flood",
-            claimed_date="2026-09-12",
+            claimed_date=today_str,
             claimed_location="Cyberabad, Hyderabad",
             language="en",
             processing_status="COMPLETED"
@@ -113,7 +115,7 @@ async def run_demonstration():
             raw_text="Breaking news: Tech corridor in Cyberabad flooded with waterlogging reaching 4 feet.",
             caption="Breaking news: Tech corridor in Cyberabad flooded with waterlogging reaching 4 feet.",
             claimed_event="Cyberabad Waterlogging",
-            claimed_date="2026-09-12",
+            claimed_date=today_str,
             claimed_location="Cyberabad, Hyderabad",
             language="en",
             processing_status="COMPLETED"
@@ -160,7 +162,7 @@ async def run_demonstration():
         print(f"  * Created Claim 1: '{claim1.claim_text}' (ID: {claim1.id})")
         print(f"  * Created Claim 2: '{claim2.claim_text}' (ID: {claim2.id})")
 
-        # 5. Historical Media Rediscovery Match
+        # 5. Historical Media Rediscovery Match (Disaggregated raw metrics, no manufactured single probability)
         media_match = MediaMatchRecord(
             source_media_asset_id=suspect_asset.id,
             source_evidence_id=sub1.id,
@@ -169,13 +171,17 @@ async def run_demonstration():
             method="HISTORICAL_MEDIA_REDISCOVERY",
             classification_rationale="Geometric keypoint match with October 2020 Hyderabad monsoon archives; color rebalanced and cropped.",
             raw_metrics={
-                "confidence": 0.96,
-                "inlier_ratio": 0.88,
                 "homography_inliers": 142,
+                "inlier_ratio": 0.88,
+                "phash_distance": 6,
+                "dhash_distance": 4,
+                "ransac_status": "CONVERGED_VALID_HOMOGRAPHY",
                 "archived_date": "2020-10-14",
-                "original_event": "Hyderabad October 2020 Flash Floods"
+                "original_event": "Hyderabad October 2020 Flash Floods",
+                "is_candidate_match": True,
+                "requires_human_review": True
             },
-            disclaimer="Visual match indicates geometric similarity. Requires contextual verification."
+            disclaimer="Candidate visual match requiring investigator review. Measurement indicates feature correspondence, not absolute identity."
         )
         session.add(media_match)
 
@@ -185,7 +191,7 @@ async def run_demonstration():
             claim_id=claim1.id,
             original_url="https://timesofindia.indiatimes.com/city/hyderabad/fake-alert-2020-flood-pics-recirculated/articleshow/99881122.cms",
             canonical_url="https://timesofindia.indiatimes.com/city/hyderabad/fake-alert-2020-flood-pics-recirculated/articleshow/99881122.cms",
-            article_title="Times Fact Check: Old 2020 Hyderabad Flood Photos Falsely Circulated as Current Cyberabad Flooding",
+            article_title="[SIMULATED] Times Fact Check: Old 2020 Hyderabad Flood Photos Falsely Circulated as Current Cyberabad Flooding",
             publisher="Times of India",
             published_date=(now - timedelta(hours=3)).isoformat(),
             retrieval_timestamp=now,
@@ -193,7 +199,7 @@ async def run_demonstration():
             source_type="FACT_CHECK",
             retrieval_method="SEARCH_SCRAPE",
             content_hash="hash-toi-factcheck",
-            text_excerpt="Police and weather authorities confirmed no catastrophic flooding occurred in Cyberabad today. The viral visual depicts the October 2020 deluge in Tolichowki.",
+            text_excerpt="[SIMULATED — NOT LIVE EXTERNAL EVIDENCE] Police and weather authorities confirmed no catastrophic flooding occurred in Cyberabad today. The viral visual depicts the October 2020 deluge in Tolichowki.",
             retrieval_status="SUCCESS"
         )
         src2 = RetrievedSourceRecord(
@@ -201,7 +207,7 @@ async def run_demonstration():
             claim_id=claim1.id,
             original_url="https://www.thehindu.com/news/cities/Hyderabad/light-showers-in-cyberabad-traffic-normal/article883311.ece",
             canonical_url="https://www.thehindu.com/news/cities/Hyderabad/light-showers-in-cyberabad-traffic-normal/article883311.ece",
-            article_title="Light Showers in Cyberabad; Traffic Remains Normal, IT Corridor Fully Operational",
+            article_title="[SIMULATED] Light Showers in Cyberabad; Traffic Remains Normal, IT Corridor Fully Operational",
             publisher="The Hindu",
             published_date=(now - timedelta(hours=5)).isoformat(),
             retrieval_timestamp=now,
@@ -209,7 +215,7 @@ async def run_demonstration():
             source_type="NEWS",
             retrieval_method="SEARCH_SCRAPE",
             content_hash="hash-thehindu-report",
-            text_excerpt="Cyberabad Traffic Police advised commuters that light showers were recorded, but all tech park underpasses and arteries remain clear and operational.",
+            text_excerpt="[SIMULATED — NOT LIVE EXTERNAL EVIDENCE] Cyberabad Traffic Police advised commuters that light showers were recorded, but all tech park underpasses and arteries remain clear and operational.",
             retrieval_status="SUCCESS"
         )
         session.add_all([src1, src2])
@@ -283,8 +289,8 @@ async def run_demonstration():
             target_entity_id=f"claim_{claim1.id}",
             target_entity_type="CLAIM",
             relationship_type="CLAIM_VARIANT",
-            edge_nature="INFERRED",
-            is_inferred=True,
+            edge_nature="HUMAN_CONFIRMED",
+            is_inferred=False,
             evidence_summary="Textual submission reproduces identical viral claim with numerical waterlogging embellishment.",
             detection_method="HUMAN_CONFIRMATION",
             review_status="CONFIRMED",
@@ -387,18 +393,42 @@ async def run_demonstration():
         print(f"  * Independence Verdict    : {deps['independence_assessment']}")
         print(f"  * Synthesis Explanation   : {deps['explanation']}")
 
-        print("\n--- Historical Media Rediscovery Findings ---")
+        print("\n--- Historical Media Rediscovery Findings (Disaggregated Raw Measurements) ---")
         for m in explanation.historical_media_findings:
-            print(f"  * Classification: {m['classification']} (Confidence: {m['confidence']})")
+            print(f"  * Classification: {m['classification']} (Candidate Match: {m.get('is_candidate_match')})")
             print(f"  * Rationale     : {m['rationale']}")
-            print(f"  * Archival Date : {m['raw_metrics'].get('archived_date')} | Event: {m['raw_metrics'].get('original_event')}")
+            print(f"  * Measurements  : Homography Inliers={m.get('homography_inliers')} | Inlier Ratio={m.get('inlier_ratio')} | pHash Dist={m.get('phash_distance')}")
+            print(f"  * Archival Date : {m['raw_metrics'].get('archived_date')} | Original Event: {m['raw_metrics'].get('original_event')}")
+            print(f"  * Disclaimer    : {m.get('disclaimer')}")
 
         print("\n--- Epistemic Boundaries & Known Limitations ---")
         print(f"  * {explanation.known_limitations}")
 
+        # =====================================================================
+        # [Step 6] Investigation Report Generation
+        # =====================================================================
         print("\n" + "=" * 80)
-        print(f"Interactive Lineage Explorer UI available at:")
+        print("[Step 6] Generating Official Investigation Report Dossier")
+        print("=" * 80)
+
+        report_data = await build_investigation_report_data(investigation_id=inv.id, db=session)
+        print(f"Case Title           : {report_data['investigation']['title']}")
+        print(f"Simulation Banner    : {report_data['simulation_disclaimer']}")
+        print(f"Executive Summary    : {report_data['executive_summary']}")
+        print(f"Total Submissions    : {report_data['metrics']['submissions_count']}")
+        print(f"Total Extracted Claims: {report_data['metrics']['claims_count']}")
+        print(f"Retrieved Sources    : {report_data['metrics']['sources_count']}")
+        print(f"Historical Matches   : {report_data['metrics']['matches_count']}")
+        print(f"Active Assessments   : {report_data['metrics']['assessments_count']}")
+        print(f"Human Reviews Logged : {len(report_data['human_review_log'])}")
+
+        print("\n" + "=" * 80)
+        print(f"TRUTHNET AI Intelligence Workbench URL:")
+        print(f"http://localhost:8000/workbench?investigation_id={inv.id}")
+        print(f"Direct Lineage Explorer URL:")
         print(f"http://localhost:8000/api/v1/investigations/{inv.id}/lineage/explorer")
+        print(f"Printable Case Report Dossier URL:")
+        print(f"http://localhost:8000/api/v1/investigations/{inv.id}/report/html")
         print("=" * 80)
 
     await engine.dispose()

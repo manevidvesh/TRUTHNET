@@ -34,6 +34,9 @@ app.add_middleware(
 # Mount API routers
 app.include_router(api_v1_router, prefix=settings.API_V1_STR)
 
+from app.api.v1.lineage import workbench_ui
+app.add_api_route("/workbench", workbench_ui, methods=["GET"], tags=["Workbench"])
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {

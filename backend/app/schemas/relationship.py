@@ -55,7 +55,9 @@ class LineageRelationshipType(str, Enum):
 
 class LineageEdgeNature(str, Enum):
     OBSERVED = "OBSERVED"
+    SYSTEM_DERIVED = "SYSTEM_DERIVED"
     INFERRED = "INFERRED"
+    HUMAN_CONFIRMED = "HUMAN_CONFIRMED"
 
 class LineageReviewStatus(str, Enum):
     UNREVIEWED = "UNREVIEWED"

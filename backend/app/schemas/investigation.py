@@ -1,3 +1,4 @@
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,3 +24,20 @@ class InvestigationResponse(InvestigationBase):
     evidence_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+class InvestigationReportResponse(BaseModel):
+    investigation: Dict[str, Any]
+    is_simulated_scenario: bool
+    simulation_disclaimer: Optional[str] = None
+    executive_summary: str
+    metrics: Dict[str, int]
+    submissions: List[Dict[str, Any]]
+    media_assets: List[Dict[str, Any]]
+    claims: List[Dict[str, Any]]
+    historical_media_matches: List[Dict[str, Any]]
+    retrieved_sources: List[Dict[str, Any]]
+    source_independence_evaluations: List[Dict[str, Any]]
+    contextual_assessments: List[Dict[str, Any]]
+    epistemic_limitations: List[str]
+    human_review_log: List[Dict[str, Any]]
+    generated_at: str

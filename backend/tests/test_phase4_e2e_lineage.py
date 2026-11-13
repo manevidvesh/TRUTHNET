@@ -305,12 +305,12 @@ async def test_lineage_edge_nature_observed_vs_inferred(db_session: AsyncSession
     assert resp_all.status_code == 200
     edges_all = resp_all.json()["edges"]
     edge_natures = {e["edge_nature"] for e in edges_all}
-    assert "OBSERVED" in edge_natures
+    assert "OBSERVED" in edge_natures or "SYSTEM_DERIVED" in edge_natures
     assert "INFERRED" in edge_natures
 
-    # Container edge (sub -> claim) must be OBSERVED
+    # Container edge (sub -> claim) must be SYSTEM_DERIVED
     container_edge = next(e for e in edges_all if e["relationship_type"] == "SAME_CLAIM" and e["source_id"] == f"sub_{sub.id}")
-    assert container_edge["edge_nature"] == "OBSERVED"
+    assert container_edge["edge_nature"] == "SYSTEM_DERIVED"
 
     # Variant edge (claim1 -> claim2) must be INFERRED
     variant_edge = next(e for e in edges_all if e["relationship_type"] == "CLAIM_VARIANT")
@@ -321,7 +321,7 @@ async def test_lineage_edge_nature_observed_vs_inferred(db_session: AsyncSession
     assert resp_obs.status_code == 200
     edges_obs = resp_obs.json()["edges"]
     for e in edges_obs:
-        assert e["edge_nature"] == "OBSERVED"
+        assert not e["is_inferred"]
     assert not any(e["relationship_type"] == "CLAIM_VARIANT" for e in edges_obs)
 
 
@@ -915,6 +915,7 @@ async def test_lineage_human_review_lifecycle(db_session: AsyncSession, async_cl
     assert review_resp.status_code == 200
     review_data = review_resp.json()
     assert review_data["review_status"] == "CONFIRMED"
+    assert review_data["edge_nature"] == "HUMAN_CONFIRMED"
     assert review_data["reviewer_notes"] == "Verified by investigator cross-referencing health department bulletin."
 
     # 3. Verify in graph
@@ -923,6 +924,7 @@ async def test_lineage_human_review_lifecycle(db_session: AsyncSession, async_cl
     reviewed_edge = next((e for e in edges if e["id"] == f"rel_{rel_id}"), None)
     assert reviewed_edge is not None
     assert reviewed_edge["review_status"] == "CONFIRMED"
+    assert reviewed_edge["edge_nature"] == "HUMAN_CONFIRMED"
     assert reviewed_edge["reviewer_notes"] == "Verified by investigator cross-referencing health department bulletin."
 
 
@@ -1015,3 +1017,122 @@ async def test_lineage_explorer_ui_html_render(db_session: AsyncSession, async_c
     assert "toggle-inferred" in html
     assert "stat-nodes" in html
     assert "stat-edges" in html
+
+
+@pytest.mark.asyncio
+async def test_disaggregated_media_metrics_no_single_confidence(db_session: AsyncSession, async_client: AsyncClient):
+    """
+    Test 14: Verify disaggregation of media similarity metrics.
+    Ensures raw metrics (homography inliers, inlier ratio, pHash distance) are exposed,
+    candidate match disclaimers are attached, and no manufactured confidence probability is produced.
+    """
+    inv = Investigation(title="Disaggregated Metrics Test")
+    db_session.add(inv)
+    await db_session.flush()
+
+    source_asset = make_test_asset("uploads/suspect.jpg", sha256_hash="suspect-sha-001")
+    archived_asset = make_test_asset("archives/archived.jpg", sha256_hash="archive-sha-002")
+    db_session.add_all([source_asset, archived_asset])
+    await db_session.flush()
+
+    sub = EvidenceSubmission(
+        investigation_id=inv.id,
+        media_asset_id=source_asset.id,
+        submission_type="IMAGE",
+        caption="Devastating floods today"
+    )
+    db_session.add(sub)
+    await db_session.flush()
+
+    claim = make_test_claim(inv.id, sub.id, text="Devastating floods today")
+    db_session.add(claim)
+    await db_session.flush()
+
+    match = make_test_media_match(
+        source_asset_id=source_asset.id,
+        source_evidence_id=sub.id,
+        matched_asset_id=archived_asset.id,
+        classification="SAME_PHOTOGRAPH_MODIFIED",
+        raw_metrics={
+            "homography_inliers": 142,
+            "inlier_ratio": 0.88,
+            "phash_distance": 6,
+            "dhash_distance": 4,
+            "ransac_status": "CONVERGED_VALID_HOMOGRAPHY"
+        },
+        disclaimer="Candidate visual match requiring investigator review. Measurement indicates feature correspondence, not absolute identity."
+    )
+    db_session.add(match)
+    await db_session.commit()
+
+    # Query Graph
+    resp = await async_client.get(f"/api/v1/investigations/{inv.id}/lineage/graph")
+    assert resp.status_code == 200
+    edges = resp.json()["edges"]
+    match_edge = next(e for e in edges if e["relationship_type"] == "SAME_PHOTOGRAPH_CANDIDATE")
+    assert match_edge["edge_nature"] == "INFERRED"
+    assert match_edge["confidence"] is None  # No manufactured probability
+    meta = match_edge["metadata"]
+    assert meta["homography_inliers"] == 142
+    assert meta["inlier_ratio"] == 0.88
+    assert meta["phash_distance"] == 6
+    assert meta["is_candidate_match"] is True
+    assert meta["requires_human_review"] is True
+    assert "Candidate visual match" in meta["disclaimer"]
+
+
+@pytest.mark.asyncio
+async def test_wire_service_edges_no_ghost_nodes(db_session: AsyncSession, async_client: AsyncClient):
+    """
+    Test 15: Verify that syndicated wire service dependencies create direct edges between
+    source records without introducing unpersisted ACCOUNT or EVENT ghost nodes.
+    """
+    inv = Investigation(title="No Ghost Nodes Test")
+    db_session.add(inv)
+    await db_session.flush()
+
+    sub = EvidenceSubmission(investigation_id=inv.id, submission_type="TEXT")
+    db_session.add(sub)
+    await db_session.flush()
+
+    claim = make_test_claim(inv.id, sub.id, text="Policy change announced by regulator")
+    db_session.add(claim)
+    await db_session.flush()
+
+    src1 = make_test_source(inv.id, claim.id, url="https://outlet1.com/wire/1", title="Outlet 1", publisher="Outlet 1")
+    src2 = make_test_source(inv.id, claim.id, url="https://outlet2.com/wire/2", title="Outlet 2", publisher="Outlet 2")
+    db_session.add_all([src1, src2])
+    await db_session.flush()
+
+    dep = SourceIndependenceRecord(
+        claim_id=claim.id,
+        total_sources_count=2,
+        independent_sources_count=1,
+        independence_assessment="SHARED_WIRE_REPORT",
+        clusters=[{
+            "cluster_id": 1,
+            "dependency_type": "SHARED_WIRE_REPORT",
+            "wire_agency": "PTI",
+            "source_ids": [src1.id, src2.id]
+        }],
+        explanation="Both outlets reprint identical Press Trust of India wire copy."
+    )
+    db_session.add(dep)
+    await db_session.commit()
+
+    resp = await async_client.get(f"/api/v1/investigations/{inv.id}/lineage/graph")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Verify NO ghost nodes
+    entity_types = {n["entity_type"] for n in data["nodes"]}
+    assert "ACCOUNT" not in entity_types
+    assert "EVENT" not in entity_types
+
+    # Verify direct edge between src1 and src2
+    edges = data["edges"]
+    wire_edge = next((e for e in edges if e["relationship_type"] == "SHARED_WIRE_REPORT"), None)
+    assert wire_edge is not None
+    assert wire_edge["source_id"] == f"src_{src1.id}"
+    assert wire_edge["target_id"] == f"src_{src2.id}"
+    assert wire_edge["edge_nature"] == "SYSTEM_DERIVED"

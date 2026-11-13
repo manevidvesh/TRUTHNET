@@ -81,13 +81,22 @@ class ExplainableAssessmentEngine:
             )
             match_res = await session.execute(match_stmt)
             for m in match_res.scalars().all():
+                raw_m = m.raw_metrics if isinstance(m.raw_metrics, dict) else {}
+                is_exact = (m.classification == "EXACT_FILE_MATCH")
                 historical_matches.append({
                     "match_record_id": m.id,
                     "classification": m.classification,
                     "method": m.method,
-                    "confidence": getattr(m, "confidence_score", None) or (m.raw_metrics.get("confidence") if isinstance(m.raw_metrics, dict) else None) or 1.0,
                     "rationale": m.classification_rationale,
-                    "raw_metrics": m.raw_metrics,
+                    "homography_inliers": raw_m.get("homography_inliers") or raw_m.get("inlier_count"),
+                    "inlier_ratio": raw_m.get("inlier_ratio"),
+                    "phash_distance": raw_m.get("phash_distance"),
+                    "dhash_distance": raw_m.get("dhash_distance"),
+                    "ransac_status": raw_m.get("ransac_status"),
+                    "is_candidate_match": not is_exact,
+                    "requires_human_review": not is_exact,
+                    "disclaimer": getattr(m, "disclaimer", None) or "Candidate visual match requiring investigator review. Measurement indicates feature correspondence, not absolute identity.",
+                    "raw_metrics": raw_m,
                     "matched_at": m.created_at.isoformat() if m.created_at else None
                 })
 

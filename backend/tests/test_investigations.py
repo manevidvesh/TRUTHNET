@@ -58,3 +58,55 @@ async def test_investigation_lifecycle(async_client: AsyncClient):
     # 6. Verify 404 after deletion
     not_found_res = await async_client.get(f"/api/v1/investigations/{inv_id}")
     assert not_found_res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_investigation_report_endpoint(async_client: AsyncClient):
+    # Create investigation
+    create_res = await async_client.post("/api/v1/investigations/", json={
+        "title": "Report Verification Investigation",
+        "description": "Testing automated dossier generation",
+        "priority": "MEDIUM"
+    })
+    assert create_res.status_code == 201
+    inv_id = create_res.json()["id"]
+
+    # 1. Test JSON report endpoint
+    rep_res = await async_client.get(f"/api/v1/investigations/{inv_id}/report")
+    assert rep_res.status_code == 200
+    report = rep_res.json()
+    assert report["investigation"]["id"] == inv_id
+    assert "metrics" in report
+    assert "executive_summary" in report
+    assert "epistemic_limitations" in report
+    assert len(report["epistemic_limitations"]) >= 3
+    assert report["is_simulated_scenario"] is False
+    assert report["simulation_disclaimer"] is None
+
+    # 2. Test HTML report endpoint
+    html_res = await async_client.get(f"/api/v1/investigations/{inv_id}/report/html")
+    assert html_res.status_code == 200
+    assert "text/html" in html_res.headers["content-type"]
+    assert "TRUTHNET AI — Intelligence Investigation Dossier" in html_res.text
+
+    # 3. Test Workbench root
+    wb_res = await async_client.get(f"/workbench?investigation_id={inv_id}")
+    assert wb_res.status_code == 200
+    assert "TRUTHNET AI — Intelligence Workbench" in wb_res.text
+
+
+@pytest.mark.asyncio
+async def test_simulated_investigation_banner_detection(async_client: AsyncClient):
+    create_res = await async_client.post("/api/v1/investigations/", json={
+        "title": "INV-2026-999 [SIMULATED]: Synthetic Drill Case",
+        "description": "Controlled demonstration scenario",
+        "priority": "LOW"
+    })
+    assert create_res.status_code == 201
+    inv_id = create_res.json()["id"]
+
+    rep_res = await async_client.get(f"/api/v1/investigations/{inv_id}/report")
+    assert rep_res.status_code == 200
+    report = rep_res.json()
+    assert report["is_simulated_scenario"] is True
+    assert "SIMULATED EVIDENCE RECORD" in report["simulation_disclaimer"]

@@ -193,6 +193,9 @@ class LineageGraphEngine:
                 # Target matched media asset node
                 target_asset_id = match.matched_media_asset_id or match.source_media_asset_id
                 matched_node_id = f"media_{target_asset_id}"
+                raw_m = match.raw_metrics if isinstance(match.raw_metrics, dict) else {}
+                is_exact = (match.classification == "EXACT_FILE_MATCH")
+
                 if matched_node_id not in nodes_dict:
                     matched_node = LineageNode(
                         id=matched_node_id,
@@ -203,7 +206,12 @@ class LineageGraphEngine:
                         metadata={
                             "classification": match.classification,
                             "method": match.method,
-                            "raw_metrics": match.raw_metrics
+                            "raw_metrics": raw_m,
+                            "homography_inliers": raw_m.get("homography_inliers") or raw_m.get("inlier_count"),
+                            "inlier_ratio": raw_m.get("inlier_ratio"),
+                            "phash_distance": raw_m.get("phash_distance"),
+                            "is_candidate_match": not is_exact,
+                            "disclaimer": getattr(match, "disclaimer", None) or "Candidate visual match requiring investigator review."
                         },
                         provenance={"match_record_id": match.id}
                     )
@@ -211,7 +219,7 @@ class LineageGraphEngine:
                     graph.add_node(matched_node_id, **matched_node.model_dump())
 
                 # Determine edge type & nature
-                edge_nature = LineageEdgeNature.OBSERVED if match.classification == "EXACT_FILE_MATCH" else LineageEdgeNature.INFERRED
+                edge_nature = LineageEdgeNature.OBSERVED if is_exact else LineageEdgeNature.INFERRED
                 rel_type_map = {
                     "EXACT_FILE_MATCH": LineageRelationshipType.EXACT_MEDIA_MATCH,
                     "NEAR_DUPLICATE": LineageRelationshipType.NEAR_DUPLICATE_MEDIA,
@@ -233,9 +241,19 @@ class LineageGraphEngine:
                         evidence_id=match.id,
                         evidence_summary=f"Historical media alignment: {match.classification} ({match.classification_rationale or match.method})",
                         detection_method=match.method,
-                        confidence=getattr(match, "confidence_score", None) or (match.raw_metrics.get("confidence") if isinstance(match.raw_metrics, dict) else None) or 1.0,
+                        confidence=None,  # Disaggregated metrics; no manufactured unified confidence probability
                         timestamps={"matched_at": match.created_at.isoformat() if match.created_at else None},
-                        metadata=match.raw_metrics
+                        metadata={
+                            "raw_metrics": raw_m,
+                            "homography_inliers": raw_m.get("homography_inliers") or raw_m.get("inlier_count"),
+                            "inlier_ratio": raw_m.get("inlier_ratio"),
+                            "phash_distance": raw_m.get("phash_distance"),
+                            "dhash_distance": raw_m.get("dhash_distance"),
+                            "ransac_status": raw_m.get("ransac_status"),
+                            "is_candidate_match": not is_exact,
+                            "requires_human_review": not is_exact,
+                            "disclaimer": getattr(match, "disclaimer", None) or "Candidate visual match requiring investigator review. Measurement indicates feature correspondence, not absolute identity."
+                        }
                     )
                     edges_list.append(m_edge)
                     graph.add_edge(source_node_id, matched_node_id, key=edge_id, **m_edge.model_dump())
@@ -286,7 +304,7 @@ class LineageGraphEngine:
             nodes_dict[claim_node_id] = claim_node
             graph.add_node(claim_node_id, **claim_node.model_dump())
 
-            # Edge: Submission -> Claim (EXTRACTED_FROM / SAME_CLAIM, Observed)
+            # Edge: Submission -> Claim (EXTRACTED_FROM / SAME_CLAIM, System-derived parsing)
             sub_node_id = f"sub_{claim.evidence_submission_id}"
             if sub_node_id in nodes_dict:
                 edge_id = f"edge_sub_claim_{claim.id[:8]}"
@@ -295,7 +313,7 @@ class LineageGraphEngine:
                     source_id=sub_node_id,
                     target_id=claim_node_id,
                     relationship_type=LineageRelationshipType.SAME_CLAIM,
-                    edge_nature=LineageEdgeNature.OBSERVED,
+                    edge_nature=LineageEdgeNature.SYSTEM_DERIVED,
                     is_inferred=False,
                     evidence_id=claim.id,
                     evidence_summary=f"Syntactic proposition extracted from {claim.source_modality} span [{claim.evidence_span_start}:{claim.evidence_span_end}]",
@@ -310,7 +328,7 @@ class LineageGraphEngine:
                 c1 = active_claims[i]
                 c2 = active_claims[j]
                 
-                # Check if identical normalized text
+                # Check if identical normalized text (System-derived equality)
                 if c1.normalized_claim and c1.normalized_claim.lower() == c2.normalized_claim.lower():
                     edge_id = f"edge_same_claim_{c1.id[:6]}_{c2.id[:6]}"
                     var_edge = LineageEdge(
@@ -318,7 +336,7 @@ class LineageGraphEngine:
                         source_id=f"claim_{c1.id}",
                         target_id=f"claim_{c2.id}",
                         relationship_type=LineageRelationshipType.SAME_CLAIM,
-                        edge_nature=LineageEdgeNature.OBSERVED,
+                        edge_nature=LineageEdgeNature.SYSTEM_DERIVED,
                         is_inferred=False,
                         evidence_id=c2.id,
                         evidence_summary="Identical normalized proposition text across submissions",
@@ -452,49 +470,41 @@ class LineageGraphEngine:
                     edges_list.append(s_edge)
                     graph.add_edge(src_node_id, claim_node_id, key=edge_id, **s_edge.model_dump())
 
-            # 9. Source Dependencies & Wire Services
+            # 9. Source Dependencies & Wire Services (No synthetic ghost nodes; direct edges)
             for cid, indep in indep_records.items():
                 if not indep.clusters:
                     continue
                 for c in indep.clusters:
                     dep_type = c.get("dependency_type")
-                    wire_agency = c.get("wire_agency")
+                    wire_agency = c.get("wire_agency") or c.get("lead_publisher")
                     sids = c.get("source_ids", [])
                     
-                    if wire_agency and dep_type == "WIRE_SERVICE_DERIVED":
-                        # Create Wire Agency Node
-                        wire_node_id = f"wire_{wire_agency.replace(' ', '_')}"
-                        if wire_node_id not in nodes_dict:
-                            wire_node = LineageNode(
-                                id=wire_node_id,
-                                entity_type=LineageNodeType.ACCOUNT,
-                                entity_id=wire_agency,
-                                label=f"Wire: {wire_agency}",
-                                investigation_id=investigation_id,
-                                metadata={"agency_name": wire_agency, "type": "WIRE_NEWS_SERVICE"},
-                                provenance={"detection": "Byline and dateline attribution"}
-                            )
-                            nodes_dict[wire_node_id] = wire_node
-                            graph.add_node(wire_node_id, **wire_node.model_dump())
-
-                        # Link wire to each republished source
+                    if wire_agency and dep_type in ["WIRE_SERVICE_DERIVED", "SHARED_WIRE_REPORT"]:
+                        if len(sids) >= 2:
+                            for k in range(len(sids) - 1):
+                                s1 = f"src_{sids[k]}"
+                                s2 = f"src_{sids[k+1]}"
+                                if s1 in nodes_dict and s2 in nodes_dict:
+                                    edge_id = f"edge_wire_{sids[k][:4]}_{sids[k+1][:4]}"
+                                    w_edge = LineageEdge(
+                                        id=edge_id,
+                                        source_id=s1,
+                                        target_id=s2,
+                                        relationship_type=LineageRelationshipType.SHARED_WIRE_REPORT,
+                                        edge_nature=LineageEdgeNature.SYSTEM_DERIVED,
+                                        is_inferred=False,
+                                        evidence_id=sids[k],
+                                        evidence_summary=f"Syndicated wire dispatch ({wire_agency}) published across multiple outlets without independent reporting",
+                                        detection_method="WIRE_BYLINE_DETECTION",
+                                        metadata={"wire_agency": wire_agency, "dependency_type": dep_type}
+                                    )
+                                    edges_list.append(w_edge)
+                                    graph.add_edge(s1, s2, key=edge_id, **w_edge.model_dump())
                         for sid in sids:
                             src_node_id = f"src_{sid}"
                             if src_node_id in nodes_dict:
-                                edge_id = f"edge_wire_src_{wire_node_id[:6]}_{sid[:6]}"
-                                w_edge = LineageEdge(
-                                    id=edge_id,
-                                    source_id=wire_node_id,
-                                    target_id=src_node_id,
-                                    relationship_type=LineageRelationshipType.SHARED_WIRE_REPORT,
-                                    edge_nature=LineageEdgeNature.OBSERVED,
-                                    is_inferred=False,
-                                    evidence_id=sid,
-                                    evidence_summary=f"Article carries syndicated wire dispatch from {wire_agency}",
-                                    detection_method="WIRE_BYLINE_DETECTION"
-                                )
-                                edges_list.append(w_edge)
-                                graph.add_edge(wire_node_id, src_node_id, key=edge_id, **w_edge.model_dump())
+                                nodes_dict[src_node_id].metadata["wire_agency"] = wire_agency
+                                nodes_dict[src_node_id].metadata["is_wire_reprint"] = True
 
                     elif dep_type == "SHARED_PRESS_RELEASE" and len(sids) >= 2:
                         # Link between co-dependent press release sources
@@ -508,11 +518,12 @@ class LineageGraphEngine:
                                     source_id=s1,
                                     target_id=s2,
                                     relationship_type=LineageRelationshipType.SHARED_PRESS_RELEASE,
-                                    edge_nature=LineageEdgeNature.INFERRED,
-                                    is_inferred=True,
+                                    edge_nature=LineageEdgeNature.SYSTEM_DERIVED,
+                                    is_inferred=False,
                                     evidence_id=sids[k],
                                     evidence_summary=c.get("rationale") or "Shared verbatim official press statement",
-                                    detection_method="PRESS_RELEASE_OVERLAP"
+                                    detection_method="PRESS_RELEASE_OVERLAP",
+                                    metadata={"dependency_type": dep_type}
                                 )
                                 edges_list.append(pr_edge)
                                 graph.add_edge(s1, s2, key=edge_id, **pr_edge.model_dump())
@@ -554,12 +565,14 @@ class LineageGraphEngine:
                         source_id=claim_node_id,
                         target_id=ass_node_id,
                         relationship_type=rel_type,
-                        edge_nature=LineageEdgeNature.OBSERVED,
-                        is_inferred=False,
+                        edge_nature=LineageEdgeNature.INFERRED,
+                        is_inferred=True,
                         evidence_id=ass.id,
                         evidence_summary=ass.primary_rationale,
                         detection_method=ass.evaluation_method
                     )
+                    edges_list.append(ass_edge)
+                    graph.add_edge(claim_node_id, ass_node_id, key=edge_id, **ass_edge.model_dump())
                     edges_list.append(ass_edge)
                     graph.add_edge(claim_node_id, ass_node_id, key=edge_id, **ass_edge.model_dump())
 
@@ -586,18 +599,26 @@ class LineageGraphEngine:
             # If nodes exist, add or update edge
             if s_id in nodes_dict and t_id in nodes_dict:
                 edge_id = f"rel_{exp.id}"
+                rev_status = LineageReviewStatus(exp.review_status)
+                if rev_status == LineageReviewStatus.CONFIRMED:
+                    e_nature = LineageEdgeNature.HUMAN_CONFIRMED
+                    is_inf = False
+                else:
+                    e_nature = LineageEdgeNature(exp.edge_nature)
+                    is_inf = exp.is_inferred
+
                 exp_edge = LineageEdge(
                     id=edge_id,
                     source_id=s_id,
                     target_id=t_id,
                     relationship_type=LineageRelationshipType(exp.relationship_type),
-                    edge_nature=LineageEdgeNature(exp.edge_nature),
-                    is_inferred=exp.is_inferred,
+                    edge_nature=e_nature,
+                    is_inferred=is_inf,
                     evidence_id=exp.evidence_id,
                     evidence_summary=exp.evidence_summary,
                     detection_method=exp.detection_method,
                     confidence=exp.confidence,
-                    review_status=LineageReviewStatus(exp.review_status),
+                    review_status=rev_status,
                     reviewer_notes=exp.reviewer_notes,
                     reviewed_by=exp.reviewed_by,
                     reviewed_at=exp.reviewed_at,
@@ -615,7 +636,7 @@ class LineageGraphEngine:
             edges_list = [e for e in edges_list if e.source_id in allowed_ids and e.target_id in allowed_ids]
 
         if not include_inferred:
-            edges_list = [e for e in edges_list if e.edge_nature == LineageEdgeNature.OBSERVED]
+            edges_list = [e for e in edges_list if not e.is_inferred]
 
         epistemic_notes = (
             "Evidence-backed Claim Lineage. Solid edges represent directly observed container, metadata, "

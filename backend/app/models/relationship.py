@@ -44,8 +44,9 @@ class LineageRelationshipRecord(Base):
     # Distribution: SHARED_CAPTION, SIMILAR_CAPTION, REPEATED_DISTRIBUTION, POSSIBLE_COORDINATION
     relationship_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
-    # Edge Nature: OBSERVED (directly recorded in metadata/artifacts) vs INFERRED (algorithmic/statistical inference)
-    edge_nature: Mapped[str] = mapped_column(String(20), default="OBSERVED", nullable=False)
+    # Edge Nature: OBSERVED (direct intake), SYSTEM_DERIVED (deterministic parsing),
+    # INFERRED (probabilistic/contextual inference), HUMAN_CONFIRMED (verified by investigator)
+    edge_nature: Mapped[str] = mapped_column(String(30), default="OBSERVED", nullable=False)
     is_inferred: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Evidence Traceability
