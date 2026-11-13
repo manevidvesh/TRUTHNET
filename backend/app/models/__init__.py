@@ -6,6 +6,8 @@ from app.models.context_verification import ClaimAssessmentRecord, ClaimEvidence
 from app.models.source import RetrievedSourceRecord, SourceIndependenceRecord
 from app.models.relationship import LineageRelationshipRecord
 from app.models.authenticity import MediaAuthenticityRecord
+from app.models.coordination import CoordinationClusterRecord
+from app.models.monitoring import InvestigationEventRecord
 
 __all__ = [
     "Investigation",
@@ -25,4 +27,6 @@ __all__ = [
     "SourceIndependenceRecord",
     "LineageRelationshipRecord",
     "MediaAuthenticityRecord",
+    "CoordinationClusterRecord",
+    "InvestigationEventRecord",
 ]

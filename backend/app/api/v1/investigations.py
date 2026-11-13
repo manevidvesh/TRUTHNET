@@ -13,6 +13,7 @@ from app.models.fingerprint import MediaMatchRecord
 from app.models.context_verification import ClaimAssessmentRecord
 from app.models.relationship import LineageRelationshipRecord
 from app.models.authenticity import MediaAuthenticityRecord
+from app.models.coordination import CoordinationClusterRecord
 from app.schemas.investigation import (
     InvestigationCreate,
     InvestigationUpdate,
@@ -262,6 +263,12 @@ async def build_investigation_report_data(investigation_id: str, db: AsyncSessio
         )
         auth_records = auth_res.scalars().all()
 
+    # 11. Coordination Clusters
+    coord_res = await db.execute(
+        select(CoordinationClusterRecord).where(CoordinationClusterRecord.investigation_id == investigation_id)
+    )
+    coord_clusters = coord_res.scalars().all()
+
     # Simulation check
     is_simulated = any(
         "SIMULATED" in str(x).upper()
@@ -392,6 +399,22 @@ async def build_investigation_report_data(investigation_id: str, db: AsyncSessio
         "created_at": a.created_at.isoformat() if a.created_at else None
     } for a in auth_records]
 
+    # Clean coordination clusters
+    clean_coordination = [{
+        "id": c.id,
+        "cluster_type": c.cluster_type,
+        "title": c.title,
+        "summary": c.summary,
+        "entities_involved": c.entities_involved,
+        "supporting_observations": c.supporting_observations,
+        "detection_method": c.detection_method,
+        "confidence": c.confidence,
+        "epistemic_limitations": c.epistemic_limitations,
+        "review_status": c.review_status,
+        "reviewer_notes": c.reviewer_notes,
+        "created_at": c.created_at.isoformat() if c.created_at else None
+    } for c in coord_clusters]
+
     # Epistemic Limitations & Guidelines
     limitations = [
         "1. Media Authenticity vs Proposition Truth: Visual matching indicates whether media existed previously or was edited, but does not independently prove or disprove accompanying textual propositions.",
@@ -442,6 +465,7 @@ async def build_investigation_report_data(investigation_id: str, db: AsyncSessio
         "epistemic_limitations": limitations,
         "human_review_log": clean_reviews,
         "authenticity_records": clean_authenticity,
+        "coordination_clusters": clean_coordination,
         "generated_at": utc_now().isoformat()
     }
 
@@ -575,6 +599,24 @@ def render_html_report(data: Dict[str, Any]) -> str:
         </div>
         """
 
+    coord_html = ""
+    for c in data.get("coordination_clusters", []):
+        coord_html += f"""
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
+                <strong>{c['title']}</strong>
+                <span style="font-weight: 700; color: #7c3aed;">{c['cluster_type']}</span>
+            </div>
+            <p style="margin: 6px 0; font-size: 13px;">{c['summary']}</p>
+            <div style="font-size: 12px; color: #475569;">
+                <b>Detection Method:</b> <code>{c['detection_method']}</code> | Confidence: <b>{c['confidence']}</b> | Entities: <b>{len(c.get('entities_involved', []))}</b>
+            </div>
+            <div style="font-size: 11px; color: #d97706; margin-top: 6px;">
+                <i>{c.get('epistemic_limitations')}</i>
+            </div>
+        </div>
+        """
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -611,6 +653,9 @@ def render_html_report(data: Dict[str, Any]) -> str:
 
     <h2>Media Authenticity & Deepfake Forensic Analysis</h2>
     {auth_html or '<p style="color: #94a3b8;">No media authenticity records found.</p>'}
+
+    <h2>Coordinated Misinformation & Distribution Signals</h2>
+    {coord_html or '<p style="color: #94a3b8;">No coordination clusters detected.</p>'}
 
     <h2>Retrieved External Sources & Fact-Checks</h2>
     {sources_html or '<p style="color: #94a3b8;">No external sources retrieved.</p>'}

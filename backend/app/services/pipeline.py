@@ -318,6 +318,20 @@ class PipelineService:
                     current_sub.processing_status = "COMPLETED"
                     current_sub.error_message = None
                     await session.commit()
+
+                    try:
+                        from app.monitoring.events import event_bus
+                        await event_bus.emit(
+                            session=session,
+                            investigation_id=current_sub.investigation_id,
+                            event_type="PROCESSING_STATUS_CHANGED",
+                            severity="INFO",
+                            summary=f"Evidence {current_sub.id[:8]} ({current_sub.submission_type}) pipeline processing completed",
+                            originating_entity_id=current_sub.id,
+                            originating_entity_type="EVIDENCE_SUBMISSION"
+                        )
+                    except Exception:
+                        pass
                 return True
 
             except Exception as e:

@@ -382,6 +382,25 @@ class EvidenceOrchestrator:
         # Commit all successfully staged submissions
         await db.commit()
 
+        # Emit event to monitoring stream
+        try:
+            from app.monitoring.events import event_bus
+            await event_bus.emit(
+                session=db,
+                investigation_id=investigation_id,
+                event_type="EVIDENCE_INGESTED",
+                severity="INFO",
+                summary=f"Universal intake: {accepted_count} item(s) accepted across modalities",
+                details_json={
+                    "total_items": total_items,
+                    "accepted_count": accepted_count,
+                    "rejected_count": rejected_count,
+                    "submission_ids": submission_ids_to_process
+                }
+            )
+        except Exception as ev_err:
+            logger.debug(f"Event emission ignored: {ev_err}")
+
         # 6. Dispatch Processing
         if sync_process:
             for sub_id in submission_ids_to_process:

@@ -949,14 +949,20 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         <button class="tab-btn" onclick="switchTab('graph')">
             6. Intelligence Graph
         </button>
+        <button class="tab-btn" onclick="switchTab('coordination')">
+            7. Coordination Signals <span class="tab-count" id="count-coordination">0</span>
+        </button>
         <button class="tab-btn" onclick="switchTab('timeline')">
-            7. Timeline
+            8. Timeline
+        </button>
+        <button class="tab-btn" onclick="switchTab('monitoring')">
+            9. Live Monitoring
         </button>
         <button class="tab-btn" onclick="switchTab('decision')">
-            8. Assessment Engine
+            10. Assessment Engine
         </button>
         <button class="tab-btn" onclick="switchTab('report')">
-            9. Case Report
+            11. Case Report
         </button>
     </nav>
 
@@ -1103,12 +1109,47 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- TAB 7: TIMELINE (REDESIGNED PROGRESSIVE DISCLOSURE) -->
+        <!-- TAB 7: COORDINATION INTELLIGENCE -->
+        <div id="tab-coordination" class="tab-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                    <h2 style="font-size: 16px; font-weight: 700;">Coordinated Misinformation & Distribution Intelligence</h2>
+                    <p style="font-size: 13px; color: var(--text-muted);">Explainable analysis of temporal bursts, repeated claim text, shared media, and cross-account distribution patterns.</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="runCoordinationAnalysis()">
+                    ↻ Run Coordination Audit
+                </button>
+            </div>
+            <div id="coordination-clusters-container" style="display: flex; flex-direction: column; gap: 16px;">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+
+        <!-- TAB 8: TIMELINE (REDESIGNED PROGRESSIVE DISCLOSURE) -->
         <div id="tab-timeline" class="tab-panel">
             <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Chronological Investigation Sequence</h2>
             <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Human-readable chronological stream of camera captures, claimed dates, evidence submissions, publications, and assessments.</p>
             <div id="timeline-stream-container" class="timeline-stream">
                 <!-- Populated dynamically with clean progressive cards -->
+            </div>
+        </div>
+
+        <!-- TAB 9: LIVE MONITORING & EVENTS -->
+        <div id="tab-monitoring" class="tab-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                    <h2 style="font-size: 16px; font-weight: 700;">Live Investigation Event Stream</h2>
+                    <p style="font-size: 13px; color: var(--text-muted);">Real-time audit log of evidence intake, status changes, claim extractions, matches, and verdicts.</p>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <label style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="chk-auto-poll" checked onchange="toggleAutoPoll(this.checked)"> Auto-Poll (3s)
+                    </label>
+                    <button class="btn btn-secondary btn-sm" onclick="loadLiveEvents()">↻ Refresh Log</button>
+                </div>
+            </div>
+            <div id="monitoring-events-container" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Populated dynamically -->
             </div>
         </div>
 
@@ -1456,6 +1497,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 }
                 updateCaseHeader();
                 await loadAllCaseData();
+                toggleAutoPoll(true);
             } else {
                 openCaseSwitcherModal();
             }
@@ -1490,6 +1532,12 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
                 // 3. Fetch Timeline Data
                 await loadTimeline();
+
+                // 4. Fetch Coordination Signals
+                await loadCoordinationData();
+
+                // 5. Fetch Live Monitoring Events
+                await loadLiveEvents();
 
             } catch (err) {
                 console.error("Error loading case data:", err);
@@ -1988,6 +2036,169 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         function toggleProvenance(id) {
             const el = document.getElementById(id);
             if (el) el.classList.toggle("open");
+        }
+
+        // ==========================================
+        // COORDINATION INTELLIGENCE TAB
+        // ==========================================
+        let coordinationData = null;
+
+        async function loadCoordinationData() {
+            const container = document.getElementById("coordination-clusters-container");
+            if (!currentInvId) return;
+            try {
+                const res = await fetch(`/api/v1/investigations/${currentInvId}/coordination`);
+                if (res.ok) {
+                    coordinationData = await res.json();
+                    renderCoordinationTab();
+                    const countBadge = document.getElementById("count-coordination");
+                    if (countBadge) countBadge.innerText = (coordinationData.clusters || []).length;
+                }
+            } catch (e) {
+                console.error("Coordination fetch error:", e);
+                if (container) container.innerHTML = `<p style="color: var(--accent-red);">Failed to load coordination signals: ${e.message}</p>`;
+            }
+        }
+
+        async function runCoordinationAnalysis() {
+            if (!currentInvId) return;
+            const container = document.getElementById("coordination-clusters-container");
+            container.innerHTML = `<p style="color: var(--cyan);">Running deterministic coordination analysis across all evidence items...</p>`;
+            try {
+                const res = await fetch(`/api/v1/investigations/${currentInvId}/coordination/analyze`, { method: "POST" });
+                if (res.ok) {
+                    coordinationData = await res.json();
+                    renderCoordinationTab();
+                    await loadGraph();
+                    alert("Coordination analysis complete! Lineage graph updated.");
+                } else {
+                    alert("Coordination analysis failed.");
+                }
+            } catch (e) {
+                alert("Error triggering coordination analysis: " + e.message);
+            }
+        }
+
+        function renderCoordinationTab() {
+            const container = document.getElementById("coordination-clusters-container");
+            if (!container) return;
+            if (!coordinationData || !coordinationData.clusters || coordinationData.clusters.length === 0) {
+                container.innerHTML = `<p style="color: var(--text-muted);">No coordination patterns evaluated yet. Click 'Run Coordination Audit' to analyze.</p>`;
+                return;
+            }
+
+            container.innerHTML = coordinationData.clusters.map(c => {
+                const isPossibleCoord = c.cluster_type.includes("COORDINATED") || c.cluster_type.includes("BURST");
+                const badgeClass = isPossibleCoord ? "badge-purple" : c.cluster_type.includes("INSUFFICIENT") ? "badge-cyan" : "badge-amber";
+
+                return `
+                <div class="finding-card" style="margin-bottom: 16px;">
+                    <div class="finding-header" style="border-bottom: 1px solid var(--card-border); padding-bottom: 10px; margin-bottom: 12px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="finding-title" style="font-size: 15px;">${c.title}</span>
+                                <span class="badge ${badgeClass}">${c.cluster_type}</span>
+                                <span class="badge badge-cyan">Confidence: ${(c.confidence * 100).toFixed(0)}%</span>
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                                Detection Method: <code>${c.detection_method}</code> | Status: <b>${c.review_status}</b>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.5;">
+                        ${c.summary}
+                    </p>
+
+                    <!-- Entities Involved -->
+                    <div style="margin-bottom: 12px;">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">ENTITIES INVOLVED (${(c.entities_involved || []).length})</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            ${(c.entities_involved || []).map(ent => `
+                                <span style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                                    <span style="color: var(--cyan); font-weight: 600;">${ent.entity_type}:</span>
+                                    <span class="mono" style="color: #ffffff;">${ent.label || ent.entity_id.substring(0, 8)}</span>
+                                </span>
+                            `).join("")}
+                        </div>
+                    </div>
+
+                    <!-- Supporting Observations & Metrics -->
+                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px; font-size: 12px; margin-bottom: 12px;">
+                        <div style="font-weight: 600; color: var(--cyan); margin-bottom: 4px;">OBSERVED CORRELATION METRICS</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 11px;">
+                            ${Object.entries(c.supporting_observations || {}).map(([k, v]) => `
+                                <div><span style="color: var(--text-muted);">${k.replace(/_/g, ' ')}:</span> <b class="mono" style="color: #ffffff;">${typeof v === 'boolean' ? (v ? 'Yes' : 'No') : Array.isArray(v) ? v.length + ' items' : v}</b></div>
+                            `).join("")}
+                        </div>
+                    </div>
+
+                    <!-- Epistemic disclaimer -->
+                    <div style="background: rgba(245, 158, 11, 0.05); border-left: 3px solid var(--amber); padding: 8px 12px; border-radius: 4px; font-size: 11px; color: var(--text-secondary);">
+                        <b>Epistemic Boundary:</b> ${c.epistemic_limitations}
+                    </div>
+                </div>
+                `;
+            }).join("");
+        }
+
+        // ==========================================
+        // LIVE MONITORING & EVENTS TAB
+        // ==========================================
+        let liveEventsData = [];
+        let autoPollTimer = null;
+
+        async function loadLiveEvents() {
+            const container = document.getElementById("monitoring-events-container");
+            if (!currentInvId) return;
+            try {
+                const res = await fetch(`/api/v1/investigations/${currentInvId}/events?limit=40`);
+                if (res.ok) {
+                    const data = await res.json();
+                    liveEventsData = data.events || [];
+                    renderLiveEvents();
+                }
+            } catch (e) {
+                console.error("Live events fetch error:", e);
+            }
+        }
+
+        function renderLiveEvents() {
+            const container = document.getElementById("monitoring-events-container");
+            if (!container) return;
+            if (!liveEventsData || liveEventsData.length === 0) {
+                container.innerHTML = `<p style="color: var(--text-muted);">No investigation events logged yet.</p>`;
+                return;
+            }
+
+            container.innerHTML = liveEventsData.map(ev => {
+                const isCrit = ev.severity === "CRITICAL";
+                const isWarn = ev.severity === "WARNING";
+                const badgeColor = isCrit ? "var(--accent-red)" : isWarn ? "var(--amber)" : "var(--cyan)";
+
+                return `
+                <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-left: 3px solid ${badgeColor}; border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="mono" style="font-size: 10px; color: var(--text-muted);">${new Date(ev.created_at).toLocaleTimeString()}</span>
+                            <span class="badge" style="background: rgba(255,255,255,0.08); color: ${badgeColor};">${ev.event_type}</span>
+                            <span style="font-size: 13px; font-weight: 600; color: #ffffff;">${ev.summary}</span>
+                        </div>
+                    </div>
+                    <span class="badge" style="font-size: 10px; color: var(--text-muted);">${ev.severity}</span>
+                </div>
+                `;
+            }).join("");
+        }
+
+        function toggleAutoPoll(enable) {
+            if (autoPollTimer) {
+                clearInterval(autoPollTimer);
+                autoPollTimer = null;
+            }
+            if (enable) {
+                autoPollTimer = setInterval(loadLiveEvents, 3000);
+            }
         }
 
         // ==========================================
