@@ -1,6 +1,6 @@
 """
-TRUTHNET AI — Public Landing Page.
-Streamlined, evidence-first design system for YUKTIK-2026 PS-11.
+TRUTHNET AI — Editorial Intelligence Landing Page.
+Centered Ingestion Experience with Warm Off-White / Light Stone Aesthetic.
 """
 
 LANDING_PAGE_HTML = """<!DOCTYPE html>
@@ -11,26 +11,31 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
     <title>TRUTHNET AI — Multimodal Misinformation Intelligence Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #060913;
-            --bg-surface: #0b1220;
-            --bg-card: #0f172a;
-            --bg-card-hover: #162038;
-            --border: #1e293b;
-            --border-light: #2d3b55;
-            --text-main: #f8fafc;
-            --text-secondary: #94a3b8;
+            --bg-base: #f8f9fa;
+            --bg-surface: #ffffff;
+            --bg-subtle: #f1f3f5;
+            --bg-hover: #e9ecef;
+            --border: #e2e8f0;
+            --border-strong: #cbd5e1;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
             --text-muted: #64748b;
-            --accent: #0284c7;
-            --accent-light: #38bdf8;
-            --accent-bg: rgba(2, 132, 199, 0.1);
-            --amber: #f59e0b;
-            --amber-bg: rgba(245, 158, 11, 0.1);
-            --red: #f43f5e;
-            --green: #10b981;
-            --purple: #8b5cf6;
+            --accent: #0f766e;
+            --accent-hover: #115e59;
+            --accent-subtle: #f0fdfa;
+            --accent-border: #99f6e4;
+            --amber: #b45309;
+            --amber-subtle: #fffbeb;
+            --amber-border: #fde68a;
+            --red: #b91c1c;
+            --red-subtle: #fef2f2;
+            --red-border: #fecaca;
+            --green: #15803d;
+            --green-subtle: #f0fdf4;
+            --green-border: #bbf7d0;
         }
 
         * {
@@ -43,8 +48,8 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 
         body {
             background-color: var(--bg-base);
-            color: var(--text-main);
-            line-height: 1.5;
+            color: var(--text-primary);
+            line-height: 1.55;
             overflow-x: hidden;
         }
 
@@ -53,14 +58,14 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             text-decoration: none;
         }
 
-        /* Navigation */
+        /* Top Navigation */
         nav {
             position: sticky;
             top: 0;
             width: 100%;
-            height: 64px;
-            background: rgba(6, 9, 19, 0.9);
-            backdrop-filter: blur(12px);
+            height: 60px;
+            background: rgba(248, 249, 250, 0.95);
+            backdrop-filter: blur(8px);
             border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
@@ -74,35 +79,35 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             align-items: center;
             gap: 10px;
             font-weight: 700;
-            font-size: 16px;
+            font-size: 15px;
             letter-spacing: -0.2px;
+            color: var(--text-primary);
         }
 
         .brand-icon {
-            width: 28px;
-            height: 28px;
+            width: 26px;
+            height: 26px;
             background: var(--accent);
-            border-radius: 6px;
+            border-radius: 5px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
         .brand-icon svg {
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
             fill: #ffffff;
         }
 
         .brand-badge {
-            background: var(--accent-bg);
-            color: var(--accent-light);
-            border: 1px solid rgba(56, 189, 248, 0.25);
+            background: var(--bg-subtle);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
             font-size: 11px;
             font-weight: 600;
             padding: 2px 7px;
             border-radius: 4px;
-            margin-left: 4px;
         }
 
         .nav-links {
@@ -115,60 +120,56 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         }
 
         .nav-links a:hover {
-            color: var(--text-main);
+            color: var(--text-primary);
         }
 
         .btn-launch, .btn-primary {
             background: var(--accent);
             color: #ffffff;
             font-weight: 600;
-            font-size: 14px;
-            padding: 9px 18px;
+            font-size: 13px;
+            padding: 8px 16px;
             border-radius: 6px;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 7px;
             transition: background 0.15s ease;
+            border: none;
+            cursor: pointer;
         }
 
         .btn-launch:hover, .btn-primary:hover {
-            background: #0369a1;
+            background: var(--accent-hover);
         }
 
         .btn-secondary {
-            background: transparent;
-            border: 1px solid var(--border-light);
-            color: var(--text-secondary);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-strong);
+            color: var(--text-primary);
             font-weight: 500;
-            font-size: 14px;
-            padding: 9px 18px;
+            font-size: 13px;
+            padding: 8px 16px;
             border-radius: 6px;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 7px;
             transition: all 0.15s ease;
+            cursor: pointer;
         }
 
         .btn-secondary:hover {
-            border-color: var(--text-muted);
-            color: var(--text-main);
+            background: var(--bg-hover);
         }
 
-        /* Hero Section */
-        .hero {
-            max-width: 1200px;
+        /* Centerpiece Hero Viewport */
+        .hero-centerpiece {
+            max-width: 860px;
             margin: 0 auto;
-            padding: 72px 32px 56px;
-            display: grid;
-            grid-template-columns: 1.15fr 0.85fr;
-            align-items: center;
-            gap: 48px;
-        }
-
-        .hero-left {
+            padding: 56px 24px 64px;
+            text-align: center;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            align-items: center;
         }
 
         .eyebrow {
@@ -176,134 +177,210 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             font-size: 11px;
             font-weight: 600;
             letter-spacing: 1px;
-            color: var(--accent-light);
+            color: var(--accent);
             text-transform: uppercase;
+            margin-bottom: 12px;
         }
 
         .hero-title {
-            font-size: 42px;
-            font-weight: 700;
+            font-family: 'Newsreader', Georgia, serif;
+            font-size: 46px;
+            font-weight: 500;
             line-height: 1.15;
             letter-spacing: -0.8px;
-            color: #ffffff;
+            color: var(--text-primary);
+            margin-bottom: 12px;
         }
 
         .hero-title span {
-            color: var(--accent-light);
+            font-style: italic;
+            color: var(--accent);
         }
 
         .hero-desc {
             font-size: 16px;
             color: var(--text-secondary);
-            line-height: 1.6;
-            max-width: 520px;
+            line-height: 1.5;
+            max-width: 620px;
+            margin-bottom: 32px;
         }
 
-        .hero-actions {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            margin-top: 4px;
-        }
-
-        .hero-capabilities-bar {
-            font-size: 12px;
+        .quote-subtext {
+            font-size: 13px;
             color: var(--text-muted);
-            border-top: 1px solid var(--border);
-            padding-top: 16px;
-            margin-top: 8px;
+            margin-bottom: 24px;
         }
 
-        .hero-capabilities-bar b {
-            color: var(--text-secondary);
-        }
-
-        /* Streamlined Forensic Preview Card */
-        .hero-preview-card {
+        /* The Centered Upload Console */
+        .intake-console {
+            width: 100%;
             background: var(--bg-surface);
-            border: 1px solid var(--border);
+            border: 1px solid var(--border-strong);
             border-radius: 10px;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
+            text-align: left;
+            overflow: hidden;
         }
 
-        .preview-header {
+        .intake-tabs {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            background: var(--bg-subtle);
             border-bottom: 1px solid var(--border);
-            padding-bottom: 12px;
-        }
-
-        .preview-badge {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            font-weight: 600;
-            padding: 3px 8px;
-            border-radius: 4px;
-            background: var(--amber-bg);
-            color: var(--amber);
-            border: 1px solid rgba(245, 158, 11, 0.2);
-        }
-
-        .preview-row {
-            display: flex;
-            flex-direction: column;
+            padding: 4px 8px 0;
             gap: 4px;
         }
 
-        .preview-label {
-            font-size: 11px;
+        .intake-tab-btn {
+            background: transparent;
+            border: none;
+            padding: 9px 18px;
+            font-size: 13px;
             font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .intake-tab-btn.active {
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--accent);
+            border-radius: 6px 6px 0 0;
+        }
+
+        .intake-body {
+            padding: 24px;
+        }
+
+        .dropzone-box {
+            border: 2px dashed var(--border-strong);
+            border-radius: 8px;
+            background: var(--bg-base);
+            padding: 32px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .dropzone-box:hover, .dropzone-box.drag-over {
+            border-color: var(--accent);
+            background: var(--accent-subtle);
+        }
+
+        .dropzone-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 8px;
+        }
+
+        .dropzone-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .selected-file-chip {
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+        }
+
+        .chip-remove {
+            color: var(--red);
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+        }
+
+        .form-input, .form-textarea {
+            width: 100%;
+            background: var(--bg-base);
+            border: 1px solid var(--border-strong);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 14px;
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+
+        .form-input:focus, .form-textarea:focus {
+            border-color: var(--accent);
+            background: #ffffff;
+        }
+
+        .intake-footer {
+            padding: 16px 24px;
+            background: var(--bg-subtle);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .intake-status-text {
+            font-size: 12px;
             color: var(--text-muted);
         }
 
-        .preview-val {
+        /* History & Recent Analyses Drawer/Bar */
+        .history-strip {
+            max-width: 860px;
+            width: 100%;
+            margin-top: 20px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .history-title {
             font-size: 13px;
             font-weight: 600;
-            color: var(--text-main);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .preview-meta {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            color: var(--text-secondary);
-        }
-
-        .preview-verdict-box {
-            background: var(--bg-card);
-            border: 1px solid var(--border-light);
-            border-left: 3px solid var(--amber);
-            border-radius: 6px;
-            padding: 12px 14px;
-        }
-
-        /* Capability Strip */
+        /* Trust & Capability Bar */
         .capability-strip {
             border-top: 1px solid var(--border);
             border-bottom: 1px solid var(--border);
             background: var(--bg-surface);
-            padding: 18px 32px;
+            padding: 16px 32px;
         }
 
         .strip-inner {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 24px;
+            gap: 20px;
             flex-wrap: wrap;
         }
 
         .strip-item {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             font-size: 13px;
             font-weight: 500;
             color: var(--text-secondary);
@@ -312,20 +389,16 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         .strip-item svg {
             width: 16px;
             height: 16px;
+            stroke: var(--accent);
             fill: none;
-            stroke: var(--accent-light);
             stroke-width: 2;
         }
 
-        /* Standard Section Wrap */
+        /* Section Layout */
         .section-wrap {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
-            padding: 72px 32px;
-        }
-
-        .section-header {
-            margin-bottom: 36px;
+            padding: 64px 32px;
         }
 
         .section-tag {
@@ -333,16 +406,17 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             font-size: 11px;
             font-weight: 600;
             letter-spacing: 1px;
-            color: var(--accent-light);
+            color: var(--accent);
             text-transform: uppercase;
             display: block;
             margin-bottom: 8px;
         }
 
         .section-title {
-            font-size: 28px;
-            font-weight: 700;
-            color: #ffffff;
+            font-family: 'Newsreader', Georgia, serif;
+            font-size: 32px;
+            font-weight: 500;
+            color: var(--text-primary);
             letter-spacing: -0.4px;
             margin-bottom: 8px;
         }
@@ -350,8 +424,9 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         .section-desc {
             font-size: 15px;
             color: var(--text-secondary);
-            max-width: 640px;
+            max-width: 600px;
             line-height: 1.5;
+            margin-bottom: 32px;
         }
 
         /* Problem Grid */
@@ -374,13 +449,13 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             font-weight: 600;
             color: var(--text-muted);
             display: block;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .problem-title {
             font-size: 16px;
             font-weight: 600;
-            color: #ffffff;
+            color: var(--text-primary);
             margin-bottom: 8px;
         }
 
@@ -401,10 +476,10 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             background: var(--bg-surface);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 20px;
+            padding: 22px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
         }
 
         .cap-header {
@@ -417,8 +492,9 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
             font-weight: 600;
-            color: var(--accent-light);
-            background: var(--accent-bg);
+            color: var(--accent);
+            background: var(--accent-subtle);
+            border: 1px solid var(--accent-border);
             padding: 2px 6px;
             border-radius: 4px;
         }
@@ -426,7 +502,7 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         .cap-title {
             font-size: 15px;
             font-weight: 600;
-            color: #ffffff;
+            color: var(--text-primary);
         }
 
         .cap-desc {
@@ -448,7 +524,7 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             font-weight: 600;
             padding: 2px 7px;
             border-radius: 4px;
-            background: var(--bg-card);
+            background: var(--bg-subtle);
             border: 1px solid var(--border);
             color: var(--text-secondary);
         }
@@ -457,29 +533,29 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         .pipeline-flow {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
-            gap: 14px;
+            gap: 12px;
         }
 
         .pipeline-step {
             background: var(--bg-surface);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 18px 16px;
+            padding: 16px 14px;
         }
 
         .step-index {
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
             font-weight: 600;
-            color: var(--accent-light);
+            color: var(--accent);
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .step-name {
             font-size: 13px;
             font-weight: 700;
-            color: #ffffff;
+            color: var(--text-primary);
             margin-bottom: 6px;
         }
 
@@ -507,7 +583,7 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         .p-law {
             font-size: 14px;
             font-weight: 600;
-            color: #ffffff;
+            color: var(--text-primary);
             margin-bottom: 6px;
         }
 
@@ -517,50 +593,25 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             line-height: 1.5;
         }
 
-        /* Final CTA */
-        .cta-banner {
-            background: var(--bg-surface);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 48px;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .cta-title {
-            font-size: 28px;
-            font-weight: 700;
-            color: #ffffff;
-        }
-
-        .cta-desc {
-            font-size: 15px;
-            color: var(--text-secondary);
-            max-width: 540px;
-        }
-
         /* Footer */
         footer {
             border-top: 1px solid var(--border);
-            background: var(--bg-base);
+            background: var(--bg-surface);
             padding: 40px 32px 28px;
         }
 
         .footer-inner {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
             gap: 40px;
-            padding-bottom: 32px;
+            padding-bottom: 28px;
         }
 
         .footer-bottom {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
             border-top: 1px solid var(--border);
             padding-top: 20px;
@@ -570,12 +621,11 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             color: var(--text-muted);
         }
 
-        @media (max-width: 900px) {
-            .hero { grid-template-columns: 1fr; padding: 48px 20px; }
+        @media (max-width: 800px) {
             .problem-grid, .capabilities-grid { grid-template-columns: 1fr; }
             .pipeline-flow { grid-template-columns: repeat(2, 1fr); }
             .principles-grid { grid-template-columns: 1fr; }
-            nav { padding: 0 20px; }
+            nav { padding: 0 16px; }
             .nav-links { display: none; }
         }
     </style>
@@ -592,84 +642,112 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             <span class="brand-badge">YUKTIK-2026</span>
         </div>
         <div class="nav-links">
+            <a href="#intake">Analyse</a>
             <a href="#capabilities">Capabilities</a>
             <a href="#problem">The Challenge</a>
             <a href="#workflow">Investigation Workflow</a>
             <a href="#principles">Epistemic Principles</a>
             <a href="/docs" target="_blank">API Docs</a>
         </div>
-        <div>
+        <div style="display: flex; gap: 10px;">
+            <a href="/workbench" class="btn-secondary" style="font-size: 12px; padding: 6px 12px;">
+                <span>History</span>
+            </a>
             <a href="/workbench" class="btn-launch">
                 <span>Launch Workbench</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </a>
         </div>
     </nav>
 
-    <!-- HERO -->
-    <section class="hero">
-        <div class="hero-left">
-            <div class="eyebrow">MULTIMODAL INVESTIGATIVE INTELLIGENCE</div>
-            <h1 class="hero-title">
-                When digital evidence is manipulated, <span>context becomes intelligence.</span>
-            </h1>
-            <p class="hero-desc">
-                TRUTHNET AI connects media forensics, historical discovery, claim verification and source intelligence to help investigators evaluate evidence with clarity and rigor.
-            </p>
-            <div class="hero-actions">
-                <a href="/workbench" class="btn-primary">
-                    <span>Launch Workbench</span>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </a>
-                <a href="#capabilities" class="btn-secondary">
-                    <span>Explore Capabilities</span>
-                </a>
-            </div>
-            <div class="hero-capabilities-bar">
-                <b>Core Architecture:</b> Media Forensics &middot; Claim Intelligence &middot; Historical Discovery &middot; Network Analysis
-            </div>
+    <!-- CENTERPIECE HERO & UPLOAD -->
+    <section class="hero-centerpiece" id="intake">
+        <div class="eyebrow">MULTIMODAL INVESTIGATIVE INTELLIGENCE</div>
+        <h1 class="hero-title">
+            Investigate what you see. <span>Discover what is hidden.</span>
+        </h1>
+        <p class="hero-desc">
+            TRUTHNET investigates suspicious images, videos, audio, claims and URLs by connecting media forensics, historical discovery, claim verification, and source intelligence.
+        </p>
+        <div class="quote-subtext">
+            When digital evidence is manipulated, <b>context becomes intelligence.</b>
         </div>
 
-        <!-- Right Preview Card -->
-        <div class="hero-preview-card">
-            <div class="preview-header">
-                <span class="preview-label">Live Investigation Preview</span>
-                <span class="preview-badge">MISLEADING CONTEXT</span>
+        <!-- Central Unified Ingestion Component -->
+        <div class="intake-console">
+            <div class="intake-tabs">
+                <button type="button" class="intake-tab-btn active" id="tab-btn-files" onclick="switchIntakeMode('files')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    Media Files
+                </button>
+                <button type="button" class="intake-tab-btn" id="tab-btn-text" onclick="switchIntakeMode('text')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line></svg>
+                    Text Claim
+                </button>
+                <button type="button" class="intake-tab-btn" id="tab-btn-url" onclick="switchIntakeMode('url')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                    Source URL
+                </button>
             </div>
 
-            <div class="preview-row">
-                <span class="preview-label">Suspect Viral Asset</span>
-                <span class="preview-val">Flood Disaster Video Claim</span>
-                <span class="preview-meta">FINGERPRINT: SHA-256 f1d2d2f9... &middot; pHash: 6</span>
-            </div>
+            <form id="landing-intake-form" onsubmit="handleLandingIntake(event)">
+                <div class="intake-body">
+                    <!-- Pane 1: Files -->
+                    <div id="pane-files">
+                        <div class="dropzone-box" id="landing-dropzone" onclick="document.getElementById('landing-files-input').click()">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <div class="dropzone-title">Drop images, video or audio here, or browse files</div>
+                            <div class="dropzone-sub">Supports PNG, JPEG, WebP, MP4, WebM, WAV, MP3 &middot; Multiple files supported</div>
+                            <input type="file" id="landing-files-input" multiple style="display: none;" onchange="onLandingFilesSelected(this.files)">
+                        </div>
+                        <div id="landing-selected-files" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;"></div>
+                        
+                        <div style="margin-top: 14px;">
+                            <label style="display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Accompanying claim / post caption (optional)</label>
+                            <textarea id="landing-caption" class="form-textarea" rows="2" placeholder="e.g. Breaking footage claiming flash flood damage in Hyderabad today"></textarea>
+                        </div>
+                    </div>
 
-            <div class="preview-row">
-                <span class="preview-label">EXIF TIMECODE</span>
-                <span class="preview-val">2020-10-14 17:42:09 UTC</span>
-                <span class="preview-meta">Camera timestamp reveals 6-year temporal discrepancy</span>
-            </div>
+                    <!-- Pane 2: Text Claim -->
+                    <div id="pane-text" style="display: none;">
+                        <label style="display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Suspicious statement or viral proposition</label>
+                        <textarea id="landing-text-claim" class="form-textarea" rows="4" placeholder="Paste the claim text, message, or transcript to evaluate..."></textarea>
+                    </div>
 
-            <div class="preview-row">
-                <span class="preview-label">ORB GEOMETRY</span>
-                <span class="preview-val">142 Inliers (Ratio 0.88)</span>
-                <span class="preview-meta">Matches 2020 archival record with exact homography</span>
-            </div>
+                    <!-- Pane 3: Source URL -->
+                    <div id="pane-url" style="display: none;">
+                        <label style="display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Article, post or fact-check link</label>
+                        <input type="url" id="landing-url-input" class="form-input" placeholder="https://news.example.com/breaking-report">
+                    </div>
+                </div>
 
-            <div class="preview-row">
-                <span class="preview-label">SOURCE INDEPENDENCE</span>
-                <span class="preview-val">PTI Byline Syndication</span>
-                <span class="preview-meta">Single syndicated wire copy repeated across 4 outlets</span>
-            </div>
+                <div class="intake-footer">
+                    <span class="intake-status-text" id="landing-status-msg">Upload media or enter a claim to begin real-time analysis</span>
+                    <button type="submit" id="landing-submit-btn" class="btn-primary" style="padding: 10px 22px; font-size: 14px;">
+                        <span>Analyse Content</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </button>
+                </div>
+            </form>
+        </div>
 
-            <div class="preview-verdict-box">
-                <div class="preview-label" style="color: var(--amber);">CONTEXTUAL VERDICT</div>
-                <div style="font-weight: 600; font-size: 14px; color: #ffffff; margin-top: 2px;">Misleading Context</div>
-                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Authentic 2020 archival media recirculated with false contemporary breaking caption.</div>
+        <!-- History Link -->
+        <div class="history-strip">
+            <div class="history-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span>Recent Investigations & History</span>
             </div>
+            <a href="/workbench" class="btn-secondary" style="font-size: 12px; padding: 5px 12px;">
+                Open History &rarr;
+            </a>
         </div>
     </section>
 
-    <!-- CAPABILITY STRIP -->
+    <!-- TRUST STRIP -->
     <div class="capability-strip">
         <div class="strip-inner">
             <div class="strip-item">
@@ -697,13 +775,11 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 
     <!-- THE PROBLEM -->
     <section class="section-wrap" id="problem">
-        <div class="section-header">
-            <span class="section-tag">THE PROBLEM</span>
-            <h2 class="section-title">Misinformation is deeper than synthetic pixels.</h2>
-            <p class="section-desc">
-                Digital deception extends beyond generative deepfakes. Authentic media is weaponized out-of-context and amplified through syndicated networks.
-            </p>
-        </div>
+        <span class="section-tag">THE PROBLEM</span>
+        <h2 class="section-title">Misinformation is deeper than synthetic pixels.</h2>
+        <p class="section-desc">
+            Digital deception extends beyond generative deepfakes. Authentic media is weaponized out-of-context and amplified through syndicated networks.
+        </p>
 
         <div class="problem-grid">
             <div class="problem-card">
@@ -734,13 +810,11 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 
     <!-- CAPABILITIES SHOWCASE -->
     <section class="section-wrap" id="capabilities">
-        <div class="section-header">
-            <span class="section-tag">CAPABILITIES SHOWCASE</span>
-            <h2 class="section-title">An intelligence workbench built for rigorous verification.</h2>
-            <p class="section-desc">
-                TRUTHNET AI integrates forensics, deterministic contextual reasoning, live retrieval, and graph lineage into one unified platform.
-            </p>
-        </div>
+        <span class="section-tag">CAPABILITIES SHOWCASE</span>
+        <h2 class="section-title">An intelligence workbench built for rigorous verification.</h2>
+        <p class="section-desc">
+            TRUTHNET AI integrates forensics, deterministic contextual reasoning, live retrieval, and graph lineage into one unified platform.
+        </p>
 
         <div class="capabilities-grid">
             <div class="cap-card">
@@ -811,17 +885,24 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
                 </p>
             </div>
         </div>
+
+        <div style="margin-top: 24px; text-align: center;">
+            <a href="#intake" class="btn-primary">
+                <span>Start New Analysis</span>
+            </a>
+            <a href="#capabilities" class="btn-secondary" style="margin-left: 10px;">
+                <span>Explore Capabilities</span>
+            </a>
+        </div>
     </section>
 
     <!-- INVESTIGATION PIPELINE -->
     <section class="section-wrap" id="workflow">
-        <div class="section-header">
-            <span class="section-tag">INVESTIGATION PIPELINE</span>
-            <h2 class="section-title">From unverified signal to intelligence dossier.</h2>
-            <p class="section-desc">
-                A deterministic, verifiable progression that grounds every claim in observable forensic evidence.
-            </p>
-        </div>
+        <span class="section-tag">INVESTIGATION PIPELINE</span>
+        <h2 class="section-title">From unverified signal to intelligence dossier.</h2>
+        <p class="section-desc">
+            A deterministic, verifiable progression that grounds every claim in observable forensic evidence.
+        </p>
 
         <div class="pipeline-flow">
             <div class="pipeline-step">
@@ -859,13 +940,11 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 
     <!-- EPISTEMIC PRINCIPLES -->
     <section class="section-wrap" id="principles">
-        <div class="section-header">
-            <span class="section-tag">CORE METHODOLOGY</span>
-            <h2 class="section-title">The Four Epistemic Principles</h2>
-            <p class="section-desc">
-                TRUTHNET AI enforces rigorous boundaries between observable evidence and analytical inference.
-            </p>
-        </div>
+        <span class="section-tag">CORE METHODOLOGY</span>
+        <h2 class="section-title">The Four Epistemic Principles</h2>
+        <p class="section-desc">
+            TRUTHNET AI enforces rigorous boundaries between observable evidence and analytical inference.
+        </p>
 
         <div class="principles-grid">
             <div class="principle-box">
@@ -887,20 +966,6 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
         </div>
     </section>
 
-    <!-- FINAL CTA -->
-    <section class="section-wrap">
-        <div class="cta-banner">
-            <h2 class="cta-title">Investigate beyond the surface.</h2>
-            <p class="cta-desc">
-                Connect media, claims, sources and historical context in one evidence-led workbench.
-            </p>
-            <a href="/workbench" class="btn-primary" style="padding: 12px 28px;">
-                <span>Open TRUTHNET Workbench</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </a>
-        </div>
-    </section>
-
     <!-- FOOTER -->
     <footer>
         <div class="footer-inner">
@@ -918,13 +983,13 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
 
             <div style="display: flex; gap: 40px; font-size: 13px;">
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <b style="color: var(--text-main); font-size: 12px; text-transform: uppercase;">Product</b>
+                    <b style="color: var(--text-primary); font-size: 12px; text-transform: uppercase;">Product</b>
                     <a href="/workbench" style="color: var(--text-secondary);">Workbench</a>
                     <a href="/docs" target="_blank" style="color: var(--text-secondary);">API Documentation</a>
                     <a href="#capabilities" style="color: var(--text-secondary);">Capabilities</a>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <b style="color: var(--text-main); font-size: 12px; text-transform: uppercase;">Platform</b>
+                    <b style="color: var(--text-primary); font-size: 12px; text-transform: uppercase;">Platform</b>
                     <a href="#workflow" style="color: var(--text-secondary);">Pipeline</a>
                     <a href="#principles" style="color: var(--text-secondary);">Epistemics</a>
                     <a href="/health" style="color: var(--text-secondary);">System Health</a>
@@ -937,6 +1002,164 @@ LANDING_PAGE_HTML = """<!DOCTYPE html>
             <span>YUKTIK-2026 &middot; PS-11</span>
         </div>
     </footer>
+
+    <!-- INTAKE INTERACTION SCRIPT -->
+    <script>
+        let landingSelectedFiles = [];
+        let currentIntakeMode = 'files';
+
+        function switchIntakeMode(mode) {
+            currentIntakeMode = mode;
+            document.querySelectorAll('.intake-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab-btn-${mode}`).classList.add('active');
+
+            document.getElementById('pane-files').style.display = mode === 'files' ? 'block' : 'none';
+            document.getElementById('pane-text').style.display = mode === 'text' ? 'block' : 'none';
+            document.getElementById('pane-url').style.display = mode === 'url' ? 'block' : 'none';
+        }
+
+        function onLandingFilesSelected(fileList) {
+            for (const f of fileList) {
+                landingSelectedFiles.push(f);
+            }
+            renderLandingSelectedFiles();
+        }
+
+        function removeLandingFile(idx) {
+            landingSelectedFiles.splice(idx, 1);
+            renderLandingSelectedFiles();
+        }
+
+        function renderLandingSelectedFiles() {
+            const container = document.getElementById('landing-selected-files');
+            container.innerHTML = landingSelectedFiles.map((f, idx) => `
+                <span class="selected-file-chip">
+                    ${f.name} (${(f.size / 1024).toFixed(0)} KB)
+                    <button type="button" class="chip-remove" onclick="removeLandingFile(${idx})">&times;</button>
+                </span>
+            `).join('');
+        }
+
+        // Setup Drag & Drop
+        const dropZone = document.getElementById('landing-dropzone');
+        if (dropZone) {
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.add('drag-over');
+                }, false);
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.classList.remove('drag-over');
+                }, false);
+            });
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                if (dt.files && dt.files.length > 0) {
+                    onLandingFilesSelected(dt.files);
+                }
+            }, false);
+        }
+
+        async function handleLandingIntake(e) {
+            e.preventDefault();
+            const statusMsg = document.getElementById('landing-status-msg');
+            const submitBtn = document.getElementById('landing-submit-btn');
+
+            let rawText = "";
+            let sourceUrl = "";
+            let caption = "";
+
+            if (currentIntakeMode === 'files') {
+                caption = document.getElementById('landing-caption').value.trim();
+                if (landingSelectedFiles.length === 0 && !caption) {
+                    statusMsg.innerText = "Please select at least one media file or enter a caption.";
+                    statusMsg.style.color = "var(--red)";
+                    return;
+                }
+            } else if (currentIntakeMode === 'text') {
+                rawText = document.getElementById('landing-text-claim').value.trim();
+                if (!rawText) {
+                    statusMsg.innerText = "Please enter the claim text to evaluate.";
+                    statusMsg.style.color = "var(--red)";
+                    return;
+                }
+            } else if (currentIntakeMode === 'url') {
+                sourceUrl = document.getElementById('landing-url-input').value.trim();
+                if (!sourceUrl) {
+                    statusMsg.innerText = "Please provide an article or fact-check link.";
+                    statusMsg.style.color = "var(--red)";
+                    return;
+                }
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Initiating Analysis...";
+            statusMsg.innerText = "Creating investigation session and dispatching evidence...";
+            statusMsg.style.color = "var(--text-secondary)";
+
+            try {
+                // 1. Automatically create an investigation record
+                const invTitle = landingSelectedFiles.length > 0 
+                    ? `Analysis: ${landingSelectedFiles[0].name}` 
+                    : rawText 
+                        ? `Analysis: ${rawText.slice(0, 40)}...`
+                        : `Analysis: ${sourceUrl}`;
+
+                const createRes = await fetch("/api/v1/investigations/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        title: invTitle,
+                        description: "Initiated directly from central intake console.",
+                        priority: "HIGH"
+                    })
+                });
+
+                if (!createRes.ok) {
+                    throw new Error("Failed to initialize investigation session.");
+                }
+
+                const inv = await createRes.json();
+                const invId = inv.id;
+
+                // 2. Dispatch intake
+                const formData = new FormData();
+                for (const f of landingSelectedFiles) {
+                    formData.append("files", f);
+                }
+                if (rawText) formData.append("raw_text", rawText);
+                if (sourceUrl) formData.append("source_url", sourceUrl);
+                if (caption) formData.append("caption", caption);
+
+                const intakeRes = await fetch(`/api/v1/investigations/${encodeURIComponent(invId)}/evidence/intake`, {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!intakeRes.ok) {
+                    throw new Error("Failed to dispatch evidence items.");
+                }
+
+                statusMsg.innerText = "Analysis dispatched. Forwarding to workbench...";
+                statusMsg.style.color = "var(--green)";
+
+                // 3. Forward seamlessly to the Workbench
+                window.location.href = `/workbench?investigation_id=${encodeURIComponent(invId)}`;
+
+            } catch (err) {
+                console.error("Intake failure:", err);
+                statusMsg.innerText = "Intake error: " + err.message;
+                statusMsg.style.color = "var(--red)";
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Analyse Content";
+            }
+        }
+    </script>
 </body>
 </html>
 """

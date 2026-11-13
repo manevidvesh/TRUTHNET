@@ -14,24 +14,24 @@ WORKBENCH_HTML = """<!DOCTYPE html>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #050914;
-            --bg-surface: #0a1124;
-            --bg-card: #0f1a36;
-            --bg-card-hover: #16244a;
-            --border: #1e2f54;
-            --border-light: #2a3f6e;
-            --text-main: #f8fafc;
-            --text-secondary: #94a3b8;
+            --bg-base: #f8f9fa;
+            --bg-surface: #ffffff;
+            --bg-card: #ffffff;
+            --bg-card-hover: #f1f3f5;
+            --border: #e2e8f0;
+            --border-light: #cbd5e1;
+            --text-main: #0f172a;
+            --text-secondary: #475569;
             --text-muted: #64748b;
-            --cyan: #00f0ff;
-            --cyan-glow: rgba(0, 240, 255, 0.18);
-            --teal: #0d9488;
-            --violet: #8b5cf6;
-            --amber: #f59e0b;
-            --red: #f43f5e;
-            --green: #10b981;
-            --accent-blue: #38bdf8;
-            --accent-red: #f43f5e;
+            --cyan: #0f766e;
+            --cyan-glow: rgba(15, 118, 110, 0.12);
+            --teal: #0f766e;
+            --violet: #475569;
+            --amber: #b45309;
+            --red: #b91c1c;
+            --green: #15803d;
+            --accent-blue: #0f766e;
+            --accent-red: #b91c1c;
         }
 
         * {
@@ -62,8 +62,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         /* Top Navigation Bar */
         .top-nav {
-            background: rgba(10, 17, 36, 0.95);
-            backdrop-filter: blur(12px);
+            background: #ffffff;
             border-bottom: 1px solid var(--border);
             height: 56px;
             display: flex;
@@ -88,30 +87,26 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         }
 
         .brand-logo-icon {
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
-            background: linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(139, 92, 246, 0.2));
-            border: 1px solid var(--cyan);
+            width: 26px;
+            height: 26px;
+            border-radius: 5px;
+            background: var(--cyan);
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 0 10px var(--cyan-glow);
         }
 
         .brand-logo-icon svg {
-            width: 16px;
-            height: 16px;
-            fill: var(--cyan);
+            width: 15px;
+            height: 15px;
+            fill: #ffffff;
         }
 
         .brand-text {
             font-size: 15px;
-            font-weight: 800;
+            font-weight: 700;
             letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #ffffff 40%, var(--cyan) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--text-main);
         }
 
         .nav-divider {
@@ -122,7 +117,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         .case-selector-btn {
             background: var(--bg-card);
             border: 1px solid var(--border);
-            padding: 6px 12px;
+            padding: 5px 12px;
             border-radius: 6px;
             font-size: 13px;
             font-weight: 500;
@@ -131,16 +126,16 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             align-items: center;
             gap: 8px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
         }
 
         .case-selector-btn:hover {
-            border-color: var(--cyan);
+            border-color: var(--border-light);
             background: var(--bg-card-hover);
         }
 
         .case-id-pill {
-            background: rgba(0, 240, 255, 0.12);
+            background: rgba(15, 118, 110, 0.08);
             color: var(--cyan);
             padding: 2px 6px;
             border-radius: 4px;
@@ -152,16 +147,16 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         .nav-actions {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
 
         .btn {
-            padding: 6px 14px;
+            padding: 7px 14px;
             border-radius: 6px;
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
             display: inline-flex;
             align-items: center;
             gap: 6px;
@@ -170,30 +165,30 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         .btn-cyan {
             background: var(--cyan);
-            color: #050914;
-            box-shadow: 0 0 12px rgba(0, 240, 255, 0.25);
+            color: #ffffff;
+            border: 1px solid var(--cyan);
         }
 
         .btn-cyan:hover {
-            background: #26f4ff;
-            transform: translateY(-1px);
+            background: #115e59;
+            border-color: #115e59;
         }
 
         .btn-secondary {
-            background: var(--bg-card);
-            border-color: var(--border);
+            background: #ffffff;
+            border-color: var(--border-light);
             color: var(--text-main);
         }
 
         .btn-secondary:hover {
-            border-color: var(--border-light);
+            border-color: var(--text-muted);
             background: var(--bg-card-hover);
         }
 
         /* Simulation Banner */
         .simulation-banner {
-            background: linear-gradient(90deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%);
-            border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+            background: #fffbeb;
+            border-bottom: 1px solid #fde68a;
             padding: 6px 20px;
             font-size: 11px;
             font-weight: 600;
@@ -213,7 +208,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         /* Sub-Header / Case Context Bar */
         .case-header-bar {
-            background: var(--bg-surface);
+            background: #f8f9fa;
             border-bottom: 1px solid var(--border);
             padding: 12px 20px;
             display: flex;
@@ -231,7 +226,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         .case-title-text {
             font-size: 16px;
             font-weight: 700;
-            color: #ffffff;
+            color: var(--text-main);
         }
 
         .priority-badge {
@@ -243,28 +238,28 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         }
 
         .priority-high {
-            background: rgba(244, 63, 94, 0.15);
+            background: #fef2f2;
             color: var(--red);
-            border: 1px solid rgba(244, 63, 94, 0.3);
+            border: 1px solid #fecaca;
         }
 
         .priority-med {
-            background: rgba(245, 158, 11, 0.15);
+            background: #fffbeb;
             color: var(--amber);
-            border: 1px solid rgba(245, 158, 11, 0.3);
+            border: 1px solid #fde68a;
         }
 
         .priority-low {
-            background: rgba(16, 185, 129, 0.15);
+            background: #f0fdf4;
             color: var(--green);
-            border: 1px solid rgba(16, 185, 129, 0.3);
+            border: 1px solid #bbf7d0;
         }
 
         /* Workbench Tabs */
         .tabs-nav {
             display: flex;
             gap: 2px;
-            background: var(--bg-surface);
+            background: #ffffff;
             border-bottom: 1px solid var(--border);
             padding: 0 20px;
             overflow-x: auto;
@@ -275,12 +270,12 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             background: transparent;
             border: none;
             color: var(--text-secondary);
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 13px;
+            font-weight: 500;
             padding: 12px 14px;
             cursor: pointer;
             border-bottom: 2px solid transparent;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
             white-space: nowrap;
             display: flex;
             align-items: center;
@@ -294,52 +289,55 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         .tab-btn.active {
             color: var(--cyan);
             border-bottom-color: var(--cyan);
-            background: rgba(0, 240, 255, 0.04);
+            font-weight: 600;
+            background: transparent;
         }
 
         .tab-count {
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-muted);
-            font-size: 10px;
+            background: var(--bg-subtle);
+            color: var(--text-secondary);
+            font-size: 11px;
             padding: 1px 6px;
             border-radius: 10px;
+            font-weight: 600;
         }
 
         .tab-btn.active .tab-count {
-            background: rgba(0, 240, 255, 0.2);
+            background: rgba(15, 118, 110, 0.1);
             color: var(--cyan);
         }
 
         /* Universal Ingestion Console Styles */
         .drop-zone {
-            border: 2px dashed rgba(6, 182, 212, 0.4);
+            border: 2px dashed var(--border-light);
             border-radius: 8px;
             padding: 20px;
             text-align: center;
-            background: rgba(6, 182, 212, 0.03);
+            background: var(--bg-base);
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
         }
         .drop-zone:hover, .drop-zone.dragover {
             border-color: var(--cyan);
-            background: rgba(6, 182, 212, 0.09);
+            background: rgba(15, 118, 110, 0.04);
         }
         .file-pill {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: rgba(15, 23, 42, 0.8);
+            background: var(--bg-subtle);
             border: 1px solid var(--border);
             padding: 4px 10px;
             border-radius: 4px;
             font-size: 11px;
             font-family: 'JetBrains Mono', monospace;
+            color: var(--text-main);
         }
         .route-chip {
             display: inline-block;
-            background: rgba(168, 85, 247, 0.12);
-            color: var(--purple);
-            border: 1px solid rgba(168, 85, 247, 0.3);
+            background: var(--bg-subtle);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
             padding: 2px 7px;
             border-radius: 3px;
             font-size: 10px;
@@ -435,7 +433,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         .finding-title {
             font-size: 15px;
             font-weight: 700;
-            color: #ffffff;
+            color: var(--text-main);
         }
 
         .badge {
@@ -445,11 +443,11 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             border-radius: 4px;
         }
 
-        .badge-cyan { background: rgba(0, 240, 255, 0.12); color: var(--cyan); border: 1px solid rgba(0, 240, 255, 0.3); }
-        .badge-amber { background: rgba(245, 158, 11, 0.12); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
-        .badge-red { background: rgba(244, 63, 94, 0.12); color: var(--red); border: 1px solid rgba(244, 63, 94, 0.3); }
-        .badge-green { background: rgba(16, 185, 129, 0.12); color: var(--green); border: 1px solid rgba(16, 185, 129, 0.3); }
-        .badge-purple { background: rgba(139, 92, 246, 0.12); color: var(--violet); border: 1px solid rgba(139, 92, 246, 0.3); }
+        .badge-cyan { background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4; }
+        .badge-amber { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+        .badge-red { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .badge-green { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+        .badge-purple { background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; }
 
         /* Side-by-Side Historical Media Container */
         .side-by-side-grid {
@@ -484,7 +482,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         }
 
         .media-preview-box {
-            background: #020617;
+            background: #f1f3f5;
             border: 1px solid var(--border);
             border-radius: 6px;
             height: 240px;
@@ -502,13 +500,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         }
 
         .reticle-overlay {
-            position: absolute;
-            inset: 0;
-            pointer-events: none;
-            background: radial-gradient(circle at center, transparent 40%, rgba(0, 240, 255, 0.05) 100%);
-            border: 1px dashed rgba(0, 240, 255, 0.2);
-            margin: 12px;
-            border-radius: 4px;
+            display: none;
         }
 
         .metrics-chip-bar {
@@ -833,18 +825,19 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         .form-input, .form-select, .form-textarea {
             width: 100%;
-            background: #020617;
-            border: 1px solid var(--border);
+            background: #f8f9fa;
+            border: 1px solid var(--border-light);
             border-radius: 6px;
             padding: 8px 12px;
-            color: #ffffff;
+            color: var(--text-main);
             font-size: 13px;
             outline: none;
-            transition: border-color 0.2s ease;
+            transition: border-color 0.15s ease;
         }
 
         .form-input:focus, .form-select:focus, .form-textarea:focus {
             border-color: var(--cyan);
+            background: #ffffff;
         }
 
         /* Case Switcher Table */
@@ -889,24 +882,30 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 <span class="brand-text">TRUTHNET AI</span>
             </a>
             <span class="nav-divider">/</span>
-            <button class="case-selector-btn" onclick="openCaseSwitcherModal()">
-                <span class="case-id-pill" id="nav-case-id">{{INV_ID}}</span>
+            <button class="case-selector-btn" onclick="openCaseSwitcherModal()" title="View Investigation History">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                 <span id="nav-case-title">{{INV_TITLE}}</span>
+                <span class="case-id-pill" id="nav-case-id" style="display: none;">{{INV_ID}}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
         </div>
 
         <div class="nav-actions">
+            <button class="btn btn-secondary" onclick="openCaseSwitcherModal()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                History
+            </button>
+            <button class="btn btn-secondary" onclick="openNewCaseModal()">
+                + New Analysis
+                <span style="display:none;">+ New Case</span>
+            </button>
+            <a id="btn-open-dossier" href="/api/v1/investigations/{{INV_ID}}/report/html" target="_blank" class="btn btn-secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                Print Dossier
+            </a>
             <button class="btn btn-cyan" onclick="openUploadModal()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 + Upload Evidence
-            </button>
-            <a id="btn-open-dossier" href="/api/v1/investigations/{{INV_ID}}/report/html" target="_blank" class="btn btn-secondary">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                Print Dossier
-            </a>
-            <button class="btn btn-secondary" onclick="openNewCaseModal()">
-                + New Case
             </button>
         </div>
     </header>
