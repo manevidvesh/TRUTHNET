@@ -254,7 +254,27 @@ class EvidenceAligner:
                 }
 
         # 6. Direct Support
-        if overlap_count >= 2:
+        # Strict Proposition Relevance Invariant:
+        # A source discussing the incident/location is NOT evidence for the proposition.
+        # When languages match, the evidence must substantiate the core predicate/action, not just background entities.
+        predicate_present = True
+        if claim.predicate and (evidence.language == claim.language or claim.language == "en"):
+            pred_clean = claim.predicate.strip().lower()
+            pred_terms = [t for t in pred_clean.split() if len(t) > 2]
+            predicate_present = any(pt in content_lower for pt in pred_terms) if pred_terms else (pred_clean in content_lower)
+
+        if not predicate_present and overlap_count < 3:
+            return {
+                "relationship_type": EvidenceRelationshipType.DOES_NOT_ADDRESS,
+                "excerpt": excerpt,
+                "passage_span_start": span_start,
+                "passage_span_end": span_end,
+                "source_independence_status": "UNKNOWN",
+                "alignment_rationale": f"Evidence mentions incident background or entities ({[t for t in key_terms if t.lower() in content_lower]}), but does not address or substantiate the specific predicate assertion '{claim.predicate}'.",
+                "uncertainty_notes": "Incident context only; does not address the factual proposition."
+            }
+
+        if overlap_count >= 2 and predicate_present:
             return {
                 "relationship_type": EvidenceRelationshipType.SUPPORTS,
                 "excerpt": excerpt,

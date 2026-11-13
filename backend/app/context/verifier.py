@@ -196,6 +196,7 @@ class ContextualClaimVerifier:
             relation_dict["source_retrieved_date"] = ev.retrieved_date
             relation_dict["source_publisher"] = ev.publisher
             relation_dict["source_author"] = ev.author
+            relation_dict["source_independence_status"] = ev.source_independence_status or "UNKNOWN"
 
             relations_to_create.append(relation_dict)
 

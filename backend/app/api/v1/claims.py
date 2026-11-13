@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.models.claim import ClaimRecord
 from app.models.evidence import EvidenceSubmission
 from app.models.context_verification import ClaimAssessmentRecord, ClaimEvidenceRelationRecord
+from app.models.source import RetrievedSourceRecord, SourceIndependenceRecord
 from app.schemas.context_verification import (
     ClaimAssessmentResponse,
     ClaimAssessmentHistoryResponse,
@@ -17,9 +18,20 @@ from app.schemas.context_verification import (
     ClaimVerificationRequest,
     HumanReviewStatus
 )
+from app.schemas.source import (
+    RetrievedSourceResponse,
+    SourceIndependenceResponse,
+    ClaimRetrievalAndVerificationResponse,
+    ClaimSearchRequest,
+    SearchResultItem,
+    SourceDependencyCluster,
+    IndependenceAssessment
+)
 from app.context.verifier import ContextualClaimVerifier
+from app.retrieval.service import RetrievalService
 
 router = APIRouter(tags=["Claim Intelligence & Contextual Verification"])
+retrieval_service = RetrievalService()
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -170,3 +182,133 @@ async def get_submission_claim_assessments(
 
     res = await db.execute(stmt)
     return res.scalars().all()
+
+# --- Plan 04-03 Evidence Retrieval & Source Independence Endpoints ---
+
+@router.post("/claims/{claim_id}/retrieve-and-verify", response_model=ClaimRetrievalAndVerificationResponse, status_code=status.HTTP_200_OK)
+async def retrieve_and_verify_claim_endpoint(
+    claim_id: str,
+    payload: Optional[ClaimSearchRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Executes external multi-provider evidence retrieval, full-page/ClaimReview extraction,
+    source independence clustering, and contextual claim verification.
+    """
+    query = payload.query if payload else None
+    providers = payload.providers if payload else None
+    max_results = payload.max_results if payload else 5
+    try:
+        res = await retrieval_service.retrieve_and_verify(
+            session=db,
+            claim_id=claim_id,
+            query_override=query,
+            providers=providers,
+            max_results=max_results
+        )
+        await db.commit()
+        return res
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(ve)
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Evidence retrieval and verification failed: {str(e)}"
+        )
+
+@router.get("/claims/{claim_id}/sources", response_model=List[RetrievedSourceResponse], status_code=status.HTTP_200_OK)
+async def get_claim_sources(
+    claim_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lists all retrieved sources for a claim with their metadata, provenance, and retrieval status.
+    """
+    stmt = select(RetrievedSourceRecord).where(
+        RetrievedSourceRecord.claim_id == claim_id
+    ).order_by(desc(RetrievedSourceRecord.retrieval_timestamp))
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+@router.get("/sources/{source_id}", response_model=RetrievedSourceResponse, status_code=status.HTTP_200_OK)
+async def get_source_by_id(
+    source_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieves full details for a specific RetrievedSourceRecord by its ID.
+    """
+    stmt = select(RetrievedSourceRecord).where(RetrievedSourceRecord.id == source_id)
+    res = await db.execute(stmt)
+    source = res.scalars().first()
+    if not source:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"RetrievedSourceRecord with id '{source_id}' not found."
+        )
+    return source
+
+@router.post("/claims/{claim_id}/search", response_model=List[SearchResultItem], status_code=status.HTTP_200_OK)
+async def search_evidence_for_claim(
+    claim_id: str,
+    payload: Optional[ClaimSearchRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Executes external evidence search without full scraping or verification (discovery only).
+    """
+    claim_res = await db.execute(select(ClaimRecord).where(ClaimRecord.id == claim_id))
+    claim = claim_res.scalars().first()
+    if not claim:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ClaimRecord with id '{claim_id}' not found."
+        )
+
+    query = payload.query if (payload and payload.query) else None
+    if not query:
+        queries = retrieval_service.construct_queries(claim)
+        query = queries[0] if queries else (claim.normalized_claim or claim.claim_text)
+
+    providers = payload.providers if payload else None
+    max_results = payload.max_results if payload else 5
+    items = await retrieval_service.search_providers(
+        query=query,
+        providers=providers,
+        max_results=max_results
+    )
+    return items
+
+@router.post("/claims/{claim_id}/analyze-sources", response_model=SourceIndependenceResponse, status_code=status.HTTP_200_OK)
+async def analyze_claim_sources(
+    claim_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Executes or re-executes multi-signal source independence analysis on already-retrieved sources.
+    """
+    claim_res = await db.execute(select(ClaimRecord).where(ClaimRecord.id == claim_id))
+    claim = claim_res.scalars().first()
+    if not claim:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ClaimRecord with id '{claim_id}' not found."
+        )
+
+    indep_record = await retrieval_service.analyze_sources_for_claim(db, claim_id)
+    await db.commit()
+    return SourceIndependenceResponse(
+        id=indep_record.id,
+        claim_id=indep_record.claim_id,
+        total_sources_count=indep_record.total_sources_count,
+        independent_sources_count=indep_record.independent_sources_count,
+        independence_assessment=IndependenceAssessment(indep_record.independence_assessment),
+        clusters=[SourceDependencyCluster(**c) for c in (indep_record.clusters or [])],
+        observable_signals=indep_record.observable_signals,
+        explanation=indep_record.explanation,
+        created_at=indep_record.created_at
+    )

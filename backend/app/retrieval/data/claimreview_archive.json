@@ -1,0 +1,132 @@
+[
+  {
+    "claimReviewed": "Severe flooding submerged Mumbai streets in May 2026",
+    "reviewRating": {
+      "ratingValue": "False",
+      "bestRating": "5",
+      "worstRating": "1",
+      "alternateName": "False / Recycled Media"
+    },
+    "url": "https://www.boomlive.in/fact-check/mumbai-floods-2018-recycled-video-2026",
+    "author": {
+      "name": "BOOM Live",
+      "url": "https://www.boomlive.in"
+    },
+    "datePublished": "2026-05-11",
+    "text": "BOOM Live investigation found that the viral video claiming to show severe flooding in Mumbai in May 2026 is actually 2018 Kerala flood footage. Mumbai meteorological center recorded normal pre-monsoon showers with no major waterlogging on that date.",
+    "language": "en",
+    "entities": ["Mumbai", "Kerala", "flooding", "2018", "2026"]
+  },
+  {
+    "claimReviewed": "Cyclone wind speeds reached 350 km/h in Chennai",
+    "reviewRating": {
+      "ratingValue": "False",
+      "alternateName": "False"
+    },
+    "url": "https://www.thequint.com/news/webqoof/cyclone-wind-speed-chennai-fact-check",
+    "author": {
+      "name": "The Quint WebQoof",
+      "url": "https://www.thequint.com"
+    },
+    "datePublished": "2026-06-02",
+    "text": "India Meteorological Department (IMD) confirmed the maximum sustained wind speed of the cyclone was 110 km/h in Chennai. Viral claims that winds reached 350 km/h are completely false and exaggerated.",
+    "language": "en",
+    "entities": ["Chennai", "Cyclone", "wind speed", "IMD", "110 km/h", "350 km/h"]
+  },
+  {
+    "claimReviewed": "Finance Minister resigned from office today",
+    "reviewRating": {
+      "ratingValue": "False",
+      "alternateName": "False"
+    },
+    "url": "https://factly.in/rumors-of-finance-minister-resignation-are-false/",
+    "author": {
+      "name": "Factly",
+      "url": "https://factly.in"
+    },
+    "datePublished": "2026-04-18",
+    "text": "Official spokesperson and government communiques confirm the Finance Minister did not resign. The rumors circulating on social media regarding resignation are refuted and unfounded.",
+    "language": "en",
+    "entities": ["Finance Minister", "resigned", "resignation", "spokesperson"]
+  },
+  {
+    "claimReviewed": "National unemployment reached 10%",
+    "reviewRating": {
+      "ratingValue": "Misleading",
+      "alternateName": "Misleading Context"
+    },
+    "url": "https://www.altnews.in/unemployment-rate-claims-fact-check/",
+    "author": {
+      "name": "Alt News",
+      "url": "https://www.altnews.in"
+    },
+    "datePublished": "2026-03-20",
+    "text": "The claim omits critical baseline context. Official statistical data indicates that youth unemployment specifically touched 10%, while total national unemployment baseline remains at 3.5%. Presenting youth numbers as overall unemployment is misleading.",
+    "language": "en",
+    "entities": ["unemployment", "10%", "3.5%", "youth unemployment", "baseline"]
+  },
+  {
+    "claimReviewed": "Earthquake collapsed buildings in Tokyo",
+    "reviewRating": {
+      "ratingValue": "False",
+      "alternateName": "False / Misattributed Location"
+    },
+    "url": "https://factcheck.afp.com/doc.afp.com.33XYZ",
+    "author": {
+      "name": "AFP Fact Check",
+      "url": "https://factcheck.afp.com"
+    },
+    "datePublished": "2026-01-15",
+    "text": "Dramatic footage shared with captions alleging building collapses in Tokyo actually shows the February 2023 earthquake in Turkey. Tokyo experienced no major earthquake or building destruction on the claimed date.",
+    "language": "en",
+    "entities": ["Tokyo", "Turkey", "earthquake", "building collapse", "2023"]
+  },
+  {
+    "claimReviewed": "హైదరాబాద్‌లో కొత్త ఐటీ పాలసీని ప్రభుత్వం ప్రకటించింది",
+    "reviewRating": {
+      "ratingValue": "True",
+      "alternateName": "Correct"
+    },
+    "url": "https://telugu.factly.in/telangana-it-policy-announcement-verified/",
+    "author": {
+      "name": "Factly Telugu",
+      "url": "https://telugu.factly.in"
+    },
+    "datePublished": "2026-02-10",
+    "text": "హైదరాబాద్‌లో ప్రభుత్వం కొత్త ఐటీ పాలసీని అధికారికంగా ప్రకటించినట్లు ఐటీ శాఖ విడుదల చేసిన ప్రెస్‌నోట్ ద్వారా నిర్ధారించబడింది.",
+    "language": "te",
+    "entities": ["హైదరాబాద్", "ప్రభుత్వం", "ఐటీ పాలసీ"]
+  },
+  {
+    "claimReviewed": "प्रधानमंत्री ने नई दिल्ली में मेट्रो परियोजना का उद्घाटन किया",
+    "reviewRating": {
+      "ratingValue": "True",
+      "alternateName": "True"
+    },
+    "url": "https://hindi.boomlive.in/fact-check/delhi-metro-inauguration-claim-verified",
+    "author": {
+      "name": "BOOM Hindi",
+      "url": "https://hindi.boomlive.in"
+    },
+    "datePublished": "2026-03-05",
+    "text": "पीआईबी और आधिकारिक रिकॉर्ड्स से पुष्टि होती है कि प्रधानमंत्री ने नई दिल्ली में नए मेट्रो कॉरिडोर का औपचारिक उद्घाटन किया।",
+    "language": "hi",
+    "entities": ["नई दिल्ली", "प्रधानमंत्री", "मेट्रो परियोजना", "उद्घाटन"]
+  },
+  {
+    "claimReviewed": "Himayat Sagar dam collapsed during Hyderabad floods",
+    "reviewRating": {
+      "ratingValue": "False",
+      "alternateName": "False"
+    },
+    "url": "https://factly.in/himayat-sagar-dam-collapse-rumors-false/",
+    "author": {
+      "name": "Factly",
+      "url": "https://factly.in"
+    },
+    "datePublished": "2026-06-16",
+    "text": "Fact Check: Rumors that the Himayat Sagar dam collapsed during heavy rains in Hyderabad are false. Greater Hyderabad Municipal Corporation (GHMC) and irrigation department officials confirmed the reservoir and dam gates are intact and functioning normally.",
+    "language": "en",
+    "entities": ["Himayat Sagar", "dam", "collapsed", "Hyderabad", "floods", "GHMC"]
+  }
+]
