@@ -283,6 +283,12 @@ class PipelineService:
                 except Exception as c_err:
                     logger.warning(f"Claim extraction non-fatal failure for submission {submission.id}: {c_err}")
 
+                # Auto-verify claims if relevant local evidence is available
+                try:
+                    await self._verify_claims_with_local_evidence(session, evidence_id)
+                except Exception as v_err:
+                    logger.warning(f"Contextual verification non-fatal warning for evidence {evidence_id}: {v_err}")
+
                 # If all validation passes:
                 sub_res = await session.execute(
                     select(EvidenceSubmission).where(EvidenceSubmission.id == evidence_id)
@@ -557,5 +563,50 @@ class PipelineService:
             await submission_lock_manager.commit_with_fencing(session, lease)
 
             return claims_to_add
+
+    async def _verify_claims_with_local_evidence(
+        self,
+        session: AsyncSession,
+        evidence_id: str
+    ) -> None:
+        """
+        Safely triggers initial contextual verification for active extracted claims
+        if relevant local evidence is available (such as historical media matches).
+        Preserves complete fault isolation: never fails evidence intake.
+        """
+        sub_res = await session.execute(
+            select(EvidenceSubmission).where(EvidenceSubmission.id == evidence_id)
+        )
+        sub = sub_res.scalars().first()
+        if not sub or not sub.media_asset_id:
+            return
+
+        from app.models.fingerprint import MediaMatchRecord
+        match_res = await session.execute(
+            select(MediaMatchRecord).where(
+                (MediaMatchRecord.source_evidence_id == sub.id) |
+                (MediaMatchRecord.source_media_asset_id == sub.media_asset_id)
+            )
+        )
+        matches = match_res.scalars().all()
+        if not matches:
+            return
+
+        claims_res = await session.execute(
+            select(ClaimRecord).where(
+                ClaimRecord.evidence_submission_id == sub.id,
+                ClaimRecord.is_active == True
+            )
+        )
+        claims = claims_res.scalars().all()
+        if not claims:
+            return
+
+        from app.context.verifier import ContextualClaimVerifier
+        for claim in claims:
+            try:
+                await ContextualClaimVerifier.verify_claim(session, claim.id)
+            except Exception as cv_err:
+                logger.warning(f"Contextual verification warning for claim {claim.id}: {cv_err}")
 
 pipeline_service = PipelineService()

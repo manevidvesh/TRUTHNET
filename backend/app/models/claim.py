@@ -138,3 +138,4 @@ class ClaimRecord(Base):
     investigation = relationship("Investigation", back_populates="claims")
     evidence_submission = relationship("EvidenceSubmission", back_populates="claims")
     extraction_run = relationship("ClaimExtractionRun", back_populates="claims")
+    assessments = relationship("ClaimAssessmentRecord", back_populates="claim", cascade="all, delete-orphan")
