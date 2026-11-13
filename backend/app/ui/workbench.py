@@ -897,7 +897,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         </div>
 
         <div class="nav-actions">
-            <button class="btn btn-secondary" onclick="openUploadModal()">
+            <button class="btn btn-cyan" onclick="openUploadModal()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 + Upload Evidence
             </button>
@@ -905,7 +905,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                 Print Dossier
             </a>
-            <button class="btn btn-cyan" onclick="openNewCaseModal()">
+            <button class="btn btn-secondary" onclick="openNewCaseModal()">
                 + New Case
             </button>
         </div>
@@ -932,37 +932,37 @@ WORKBENCH_HTML = """<!DOCTYPE html>
     <!-- WORKBENCH TABS -->
     <nav class="tabs-nav">
         <button class="tab-btn active" onclick="switchTab('overview')">
-            1. Overview
+            Overview
         </button>
         <button class="tab-btn" onclick="switchTab('evidence')">
-            2. Evidence & Submissions <span class="tab-count" id="count-evidence">0</span>
+            Evidence & Submissions <span class="tab-count" id="count-evidence">0</span>
         </button>
         <button class="tab-btn" onclick="switchTab('forensics')">
-            3. Media Forensics
+            Media Forensics
         </button>
         <button class="tab-btn" onclick="switchTab('historical')">
-            4. Historical Discovery <span class="tab-count" id="count-matches">0</span>
+            Historical Discovery <span class="tab-count" id="count-matches">0</span>
         </button>
         <button class="tab-btn" onclick="switchTab('claims')">
-            5. Claims & Sources <span class="tab-count" id="count-claims">0</span>
+            Claims & Sources <span class="tab-count" id="count-claims">0</span>
         </button>
         <button class="tab-btn" onclick="switchTab('graph')">
-            6. Intelligence Graph
+            Intelligence Graph
         </button>
         <button class="tab-btn" onclick="switchTab('coordination')">
-            7. Coordination Signals <span class="tab-count" id="count-coordination">0</span>
+            Coordination Signals <span class="tab-count" id="count-coordination">0</span>
         </button>
         <button class="tab-btn" onclick="switchTab('timeline')">
-            8. Timeline
+            Timeline
         </button>
         <button class="tab-btn" onclick="switchTab('monitoring')">
-            9. Live Monitoring
+            Live Monitoring
         </button>
         <button class="tab-btn" onclick="switchTab('decision')">
-            10. Assessment Engine
+            Assessment Engine
         </button>
         <button class="tab-btn" onclick="switchTab('report')">
-            11. Case Report
+            Case Report
         </button>
     </nav>
 
@@ -1002,29 +1002,21 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 <p id="overview-summary-text" style="font-size: 14px; line-height: 1.6; color: var(--text-main);">
                     Loading investigation assessment...
                 </p>
+                <div style="margin-top: 14px; display: flex; gap: 10px;">
+                    <button class="btn btn-cyan" onclick="openUploadModal()">+ Ingest More Evidence</button>
+                    <button class="btn btn-secondary" onclick="switchTab('evidence')">View Ingested Assets &rarr;</button>
+                </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
-                <div class="finding-card">
-                    <div class="finding-header">
-                        <span class="finding-title">Signature Differentiator: Historical Rediscovery</span>
-                        <span class="badge badge-purple">DECOUPLED CONTEXT</span>
-                    </div>
-                    <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
-                        TRUTHNET separates media authenticity from narrative veracity. An authentic photograph captured in 2018 recirculated in 2026 with a false breaking-news caption is flagged as <b>MISLEADING_OR_CONTEXT_MISSING</b>, preserving both visual provenance and contextual truth.
-                    </p>
+            <div class="finding-card" style="margin-top: 16px;">
+                <div class="finding-header">
+                    <span class="finding-title">Investigation Notes & Boundaries</span>
+                    <span class="badge badge-cyan">AUDIT LOG</span>
                 </div>
-                <div class="finding-card">
-                    <div class="finding-header">
-                        <span class="finding-title">Epistemic Limitations & Guardrails</span>
-                        <span class="badge badge-cyan">ABSTENTION SAFEGUARDS</span>
-                    </div>
-                    <ul id="overview-limitations-list" style="font-size: 12px; color: var(--text-secondary); padding-left: 18px; line-height: 1.6;">
-                        <li>Absence of corroborating evidence does not establish falsehood; insufficient evidence triggers abstention.</li>
-                        <li>Syndicated wire reprints (e.g. PTI, ANI, Reuters) are clustered and not treated as independent confirmations.</li>
-                        <li>All edge inferences require human investigator confirmation before dossier finalization.</li>
-                    </ul>
-                </div>
+                <ul id="overview-limitations-list" style="font-size: 12px; color: var(--text-secondary); padding-left: 18px; line-height: 1.6;">
+                    <li>Investigator confirmation is required before finalizing official intelligence reports.</li>
+                    <li>Syndicated news agency dispatches (e.g. PTI, ANI, Reuters) are clustered into single source entities.</li>
+                </ul>
             </div>
         </div>
 
@@ -1041,8 +1033,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         <!-- TAB 3: MEDIA FORENSICS -->
         <div id="tab-forensics" class="tab-panel">
-            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Deep Multimodal Forensics & Provenance</h2>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">EXIF timecode audits, perceptual hash signatures, OCR text extraction, and audio transcription.</p>
+            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">Media Forensics & Provenance</h2>
             <div id="forensics-container" style="display: flex; flex-direction: column; gap: 16px;">
                 <!-- Populated dynamically -->
             </div>
@@ -1050,13 +1041,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         <!-- TAB 4: HISTORICAL DISCOVERY -->
         <div id="tab-historical" class="tab-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div>
-                    <h2 style="font-size: 16px; font-weight: 700;">Historical Media Rediscovery & Contextual Analysis</h2>
-                    <p style="font-size: 13px; color: var(--text-muted);">Side-by-side comparison between submitted suspect media and archival candidate matches.</p>
-                </div>
-                <span class="badge badge-purple">SIGNATURE CAPABILITY</span>
-            </div>
+            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">Historical Archival Matching</h2>
             <div id="historical-matches-container">
                 <!-- Populated dynamically -->
             </div>
@@ -1064,8 +1049,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         <!-- TAB 5: CLAIMS & SOURCES -->
         <div id="tab-claims" class="tab-panel">
-            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Atomic Claims & Source Independence</h2>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Extracted proposition triples, verification verdicts, and syndicated wire detection.</p>
+            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">Atomic Claims & Source Verification</h2>
             <div id="claims-container" style="display: flex; flex-direction: column; gap: 16px;">
                 <!-- Populated dynamically -->
             </div>
@@ -1111,11 +1095,8 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         <!-- TAB 7: COORDINATION INTELLIGENCE -->
         <div id="tab-coordination" class="tab-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div>
-                    <h2 style="font-size: 16px; font-weight: 700;">Coordinated Misinformation & Distribution Intelligence</h2>
-                    <p style="font-size: 13px; color: var(--text-muted);">Explainable analysis of temporal bursts, repeated claim text, shared media, and cross-account distribution patterns.</p>
-                </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2 style="font-size: 16px; font-weight: 700;">Coordination Signals</h2>
                 <button class="btn btn-secondary btn-sm" onclick="runCoordinationAnalysis()">
                     ↻ Run Coordination Audit
                 </button>
@@ -1125,10 +1106,9 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- TAB 8: TIMELINE (REDESIGNED PROGRESSIVE DISCLOSURE) -->
+        <!-- TAB 8: TIMELINE -->
         <div id="tab-timeline" class="tab-panel">
-            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Chronological Investigation Sequence</h2>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Human-readable chronological stream of camera captures, claimed dates, evidence submissions, publications, and assessments.</p>
+            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">Investigation Timeline</h2>
             <div id="timeline-stream-container" class="timeline-stream">
                 <!-- Populated dynamically with clean progressive cards -->
             </div>
@@ -1136,16 +1116,13 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         <!-- TAB 9: LIVE MONITORING & EVENTS -->
         <div id="tab-monitoring" class="tab-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div>
-                    <h2 style="font-size: 16px; font-weight: 700;">Live Investigation Event Stream</h2>
-                    <p style="font-size: 13px; color: var(--text-muted);">Real-time audit log of evidence intake, status changes, claim extractions, matches, and verdicts.</p>
-                </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2 style="font-size: 16px; font-weight: 700;">Live Event Stream</h2>
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <label style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
                         <input type="checkbox" id="chk-auto-poll" checked onchange="toggleAutoPoll(this.checked)"> Auto-Poll (3s)
                     </label>
-                    <button class="btn btn-secondary btn-sm" onclick="loadLiveEvents()">↻ Refresh Log</button>
+                    <button class="btn btn-secondary btn-sm" onclick="loadLiveEvents()">↻ Refresh</button>
                 </div>
             </div>
             <div id="monitoring-events-container" style="display: flex; flex-direction: column; gap: 8px;">
@@ -1153,10 +1130,9 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- TAB 8: ASSESSMENT & DECISION TREE -->
+        <!-- TAB 10: ASSESSMENT ENGINE -->
         <div id="tab-decision" class="tab-panel">
-            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Deterministic Assessment & Verification Engine</h2>
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Step-by-step verification logic, stance breakdown, and multi-signal independence rules.</p>
+            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">Assessment Logic Trail</h2>
             <div id="decision-tree-container" style="display: flex; flex-direction: column; gap: 16px;">
                 <!-- Populated dynamically -->
             </div>
@@ -1284,18 +1260,16 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                     </div>
 
                     <!-- Live Orchestration Route Matrix -->
-                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-top: 6px;">
-                        <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px;">
-                            Automated Modality Routing Matrix:
-                        </div>
-                        <div id="orchestration-route-chips" style="display: flex; flex-wrap: wrap; gap: 5px;">
-                            <span class="route-chip">EXIF Metadata</span>
-                            <span class="route-chip">Dual-Engine OCR</span>
-                            <span class="route-chip">Video Keyframes</span>
-                            <span class="route-chip">Speech Whisper</span>
-                            <span class="route-chip">pHash/ORB Rediscovery</span>
-                            <span class="route-chip">Claim Extraction</span>
-                            <span class="route-chip">Source Independence</span>
+                    <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-top: 6px;">
+                        <div id="orchestration-route-chips" style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--text-muted); align-items: center;">
+                            <span style="font-weight: 600; text-transform: uppercase; color: var(--text-secondary); font-size: 10px;">Pipeline Routes:</span>
+                            <span class="route-chip">EXIF</span>
+                            <span class="route-chip">OCR</span>
+                            <span class="route-chip">Keyframes</span>
+                            <span class="route-chip">Whisper</span>
+                            <span class="route-chip">pHash/ORB</span>
+                            <span class="route-chip">Claims</span>
+                            <span class="route-chip">Sources</span>
                         </div>
                     </div>
 
