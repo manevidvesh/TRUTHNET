@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
 from app.services.pipeline import pipeline_service
 from app.api.v1 import api_v1_router
+from app.ui import LANDING_PAGE_HTML
+from app.api.v1.lineage import workbench_ui
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,7 +37,6 @@ app.add_middleware(
 # Mount API routers
 app.include_router(api_v1_router, prefix=settings.API_V1_STR)
 
-from app.api.v1.lineage import workbench_ui
 app.add_api_route("/workbench", workbench_ui, methods=["GET"], tags=["Workbench"])
 
 @app.get("/health", tags=["Health"])
@@ -45,10 +47,14 @@ async def health_check():
         "version": "0.1.0"
     }
 
-@app.get("/", tags=["Root"])
-async def root():
-    return {
-        "message": "Welcome to TRUTHNET AI API",
-        "docs": "/docs",
-        "version": "0.1.0"
-    }
+@app.get("/", response_class=HTMLResponse, tags=["Root"])
+async def root(request: Request):
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept and "text/html" not in accept:
+        return JSONResponse({
+            "message": "Welcome to TRUTHNET AI API",
+            "docs": "/docs",
+            "workbench": "/workbench",
+            "version": "0.1.0"
+        })
+    return HTMLResponse(content=LANDING_PAGE_HTML)

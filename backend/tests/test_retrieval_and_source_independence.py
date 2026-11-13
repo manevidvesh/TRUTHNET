@@ -208,7 +208,7 @@ async def test_source_retrieval_success():
     </body>
     </html>
     """
-    with patch("httpx.AsyncClient.get") as mock_get:
+    with patch("app.retrieval.scraper.is_safe_url", return_value=(True, "Allowed")), patch("httpx.AsyncClient.get") as mock_get:
         mock_get.return_value = httpx.Response(
             status_code=200,
             text=html_content,
