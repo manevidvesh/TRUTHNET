@@ -131,6 +131,13 @@ async def test_workbench_ui_render_with_investigation(db_session: AsyncSession, 
     assert 'fetch("/api/v1/evidence/upload"' not in html
     assert 'fetch("/api/v1/evidence/text"' not in html
 
+    # Verify upload modal target case selector & dynamic switcher handlers
+    assert 'id="upload-case-select-file"' in html
+    assert 'id="upload-case-select-text"' in html
+    assert 'populateUploadModalCases' in html
+    assert 'syncUploadCase' in html
+    assert 'selectCaseById' in html
+
 
 @pytest.mark.asyncio
 async def test_workbench_simulated_banner(db_session: AsyncSession, async_client: AsyncClient):

@@ -1152,6 +1152,15 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             <!-- File Upload Form -->
             <form id="form-upload-file" onsubmit="handleUploadFile(event)">
                 <div class="modal-body">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Target Investigation Case</span>
+                            <span class="badge badge-cyan" style="font-size: 10px;">ACTIVE CASE</span>
+                        </label>
+                        <select id="upload-case-select-file" class="form-select" onchange="syncUploadCase(this.value)">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
                     <div class="form-group">
                         <label class="form-label">Media File (Image, Video, Audio)</label>
                         <input type="file" id="upload-file-input" class="form-input" required>
@@ -1180,6 +1189,15 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             <!-- Text Claim Form -->
             <form id="form-upload-text" style="display: none;" onsubmit="handleUploadText(event)">
                 <div class="modal-body">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Target Investigation Case</span>
+                            <span class="badge badge-cyan" style="font-size: 10px;">ACTIVE CASE</span>
+                        </label>
+                        <select id="upload-case-select-text" class="form-select" onchange="syncUploadCase(this.value)">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
                     <div class="form-group">
                         <label class="form-label">Raw Text Claim</label>
                         <textarea id="upload-text-content" class="form-textarea" rows="4" placeholder="Paste suspicious claim text or social media caption..." required></textarea>
@@ -1237,10 +1255,22 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         // Current investigation state
         let currentInvId = "{{INV_ID}}";
         let currentInvTitle = "{{INV_TITLE}}";
+        let allInvestigationsList = [];
+        let allInvestigationsMap = {};
         let activeTab = "overview";
         let graphData = null;
         let reportData = null;
         let timelineData = null;
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
 
         // Auto-detect investigation from URL query params
         const urlParams = new URLSearchParams(window.location.search);
@@ -1250,24 +1280,26 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         // Initialize application
         async function initWorkbench() {
-            if (!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") {
-                // If no case selected, load latest investigation from API
-                try {
-                    const res = await fetch("/api/v1/investigations/");
-                    if (res.ok) {
-                        const cases = await res.json();
-                        if (cases && cases.length > 0) {
-                            currentInvId = cases[0].id;
-                            currentInvTitle = cases[0].title;
-                            window.history.replaceState({}, '', `/workbench?investigation_id=${currentInvId}`);
-                        }
+            try {
+                const res = await fetch("/api/v1/investigations/");
+                if (res.ok) {
+                    allInvestigationsList = await res.json();
+                    allInvestigationsMap = {};
+                    allInvestigationsList.forEach(c => { allInvestigationsMap[c.id] = c; });
+                    if ((!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") && allInvestigationsList.length > 0) {
+                        currentInvId = allInvestigationsList[0].id;
+                        currentInvTitle = allInvestigationsList[0].title;
+                        window.history.replaceState({}, '', `/workbench?investigation_id=${encodeURIComponent(currentInvId)}`);
                     }
-                } catch (e) {
-                    console.error("Error fetching cases:", e);
                 }
+            } catch (e) {
+                console.error("Error fetching cases:", e);
             }
 
             if (currentInvId && currentInvId !== "{{INV_ID}}") {
+                if (allInvestigationsMap[currentInvId] && (!currentInvTitle || currentInvTitle === "{{INV_TITLE}}")) {
+                    currentInvTitle = allInvestigationsMap[currentInvId].title;
+                }
                 updateCaseHeader();
                 await loadAllCaseData();
             } else {
@@ -1861,9 +1893,64 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         function closeModal(id) { document.getElementById(id).classList.remove("open"); }
 
         function openNewCaseModal() { openModal("modal-new-case"); }
-        function openUploadModal() {
+
+        async function openUploadModal() {
             clearUploadFeedback();
+            await populateUploadModalCases();
             openModal("modal-upload");
+        }
+
+        async function populateUploadModalCases() {
+            if (!allInvestigationsList || allInvestigationsList.length === 0) {
+                try {
+                    const res = await fetch("/api/v1/investigations/");
+                    if (res.ok) {
+                        allInvestigationsList = await res.json();
+                        allInvestigationsMap = {};
+                        allInvestigationsList.forEach(c => { allInvestigationsMap[c.id] = c; });
+                    }
+                } catch (e) {
+                    console.error("Error loading investigations for upload modal:", e);
+                }
+            }
+
+            if ((!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") && allInvestigationsList.length > 0) {
+                currentInvId = allInvestigationsList[0].id;
+                currentInvTitle = allInvestigationsList[0].title;
+                updateCaseHeader();
+            }
+
+            const fileSelect = document.getElementById("upload-case-select-file");
+            const textSelect = document.getElementById("upload-case-select-text");
+
+            let optionsHtml = "";
+            if (allInvestigationsList.length === 0) {
+                optionsHtml = `<option value="">No cases available — create a case first</option>`;
+            } else {
+                optionsHtml = allInvestigationsList.map(c => {
+                    const isSelected = c.id === currentInvId ? " selected" : "";
+                    const displayTitle = escapeHtml(c.title);
+                    const shortId = c.id.length > 8 ? c.id.substring(0, 8) + "..." : c.id;
+                    return `<option value="${c.id}"${isSelected}>${displayTitle} (${shortId})</option>`;
+                }).join("");
+            }
+
+            if (fileSelect) fileSelect.innerHTML = optionsHtml;
+            if (textSelect) textSelect.innerHTML = optionsHtml;
+        }
+
+        function syncUploadCase(caseId) {
+            if (!caseId) return;
+            currentInvId = caseId;
+            if (allInvestigationsMap[caseId]) {
+                currentInvTitle = allInvestigationsMap[caseId].title;
+            }
+            const fileSelect = document.getElementById("upload-case-select-file");
+            const textSelect = document.getElementById("upload-case-select-text");
+            if (fileSelect && fileSelect.value !== caseId) fileSelect.value = caseId;
+            if (textSelect && textSelect.value !== caseId) textSelect.value = caseId;
+            updateCaseHeader();
+            window.history.replaceState({}, '', `/workbench?investigation_id=${encodeURIComponent(caseId)}`);
         }
 
         function showUploadFeedback(msg, isError) {
@@ -1900,28 +1987,49 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 const res = await fetch("/api/v1/investigations/");
                 if (res.ok) {
                     const cases = await res.json();
+                    allInvestigationsList = cases;
+                    allInvestigationsMap = {};
+                    cases.forEach(c => { allInvestigationsMap[c.id] = c; });
+
+                    if (cases.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">No cases found. Create a new case to get started.</td></tr>`;
+                        return;
+                    }
+
                     tbody.innerHTML = cases.map(c => `
-                        <tr onclick="selectCase('${c.id}', '${c.title.replace(/'/g, "\\'")}')">
+                        <tr onclick="selectCaseById('${c.id}')" style="cursor: pointer;">
                             <td>
-                                <div style="font-weight: 700; color: #ffffff;">${c.title}</div>
+                                <div style="font-weight: 700; color: #ffffff;">${escapeHtml(c.title)}</div>
                                 <div class="mono" style="font-size: 11px; color: var(--cyan);">${c.id}</div>
                             </td>
-                            <td><span class="badge ${c.priority === 'HIGH' ? 'badge-red' : 'badge-green'}">${c.priority}</span></td>
-                            <td><span class="badge badge-cyan">${c.status}</span></td>
+                            <td><span class="badge ${c.priority === 'HIGH' ? 'badge-red' : 'badge-green'}">${escapeHtml(c.priority)}</span></td>
+                            <td><span class="badge badge-cyan">${escapeHtml(c.status)}</span></td>
                             <td class="mono" style="font-size: 11px;">${new Date(c.updated_at).toLocaleDateString()}</td>
                         </tr>
                     `).join("");
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--accent-red);">Failed to load cases: HTTP ${res.status}</td></tr>`;
                 }
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="4" style="color:var(--accent-red);">Failed to load cases: ${e.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="color:var(--accent-red);">Failed to load cases: ${escapeHtml(e.message)}</td></tr>`;
             }
         }
 
-        function selectCase(id, title) {
+        async function selectCaseById(id) {
+            if (!id) return;
             currentInvId = id;
-            currentInvTitle = title;
+            if (allInvestigationsMap[id]) {
+                currentInvTitle = allInvestigationsMap[id].title;
+            }
+            updateCaseHeader();
+            syncUploadCase(id);
+            window.history.pushState({}, '', `/workbench?investigation_id=${encodeURIComponent(id)}`);
             closeModal("modal-switcher");
-            window.location.search = `?investigation_id=${id}`;
+            await loadAllCaseData();
+        }
+
+        function selectCase(id, title) {
+            selectCaseById(id);
         }
 
         async function handleCreateInvestigation(e) {
@@ -1939,8 +2047,10 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
                 if (res.ok) {
                     const newCase = await res.json();
+                    allInvestigationsList.unshift(newCase);
+                    allInvestigationsMap[newCase.id] = newCase;
                     closeModal("modal-new-case");
-                    window.location.search = `?investigation_id=${newCase.id}`;
+                    await selectCaseById(newCase.id);
                 } else {
                     alert("Failed to create investigation.");
                 }
@@ -1967,9 +2077,18 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             e.preventDefault();
             clearUploadFeedback();
 
-            if (!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") {
+            let targetInvId = document.getElementById("upload-case-select-file")?.value || currentInvId;
+            if ((!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") && allInvestigationsList.length > 0) {
+                targetInvId = allInvestigationsList[0].id;
+            }
+
+            if (!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") {
                 showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
                 return;
+            }
+
+            if (currentInvId !== targetInvId) {
+                syncUploadCase(targetInvId);
             }
 
             const fileInput = document.getElementById("upload-file-input");
@@ -2039,9 +2158,18 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             e.preventDefault();
             clearUploadFeedback();
 
-            if (!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") {
+            let targetInvId = document.getElementById("upload-case-select-text")?.value || currentInvId;
+            if ((!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") && allInvestigationsList.length > 0) {
+                targetInvId = allInvestigationsList[0].id;
+            }
+
+            if (!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") {
                 showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
                 return;
+            }
+
+            if (currentInvId !== targetInvId) {
+                syncUploadCase(targetInvId);
             }
 
             const text = document.getElementById("upload-text-content").value.trim();
