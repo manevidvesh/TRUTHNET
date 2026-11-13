@@ -134,6 +134,15 @@ async def test_workbench_ui_render_with_investigation(db_session: AsyncSession, 
     # Verify upload modal target case selector & dynamic switcher handlers
     assert 'id="upload-case-select-file"' in html
     assert 'id="upload-case-select-text"' in html
+    assert 'id="upload-case-select-universal"' in html
+    assert 'id="form-upload-universal"' in html
+    assert 'id="upload-universal-files"' in html
+    assert 'id="upload-universal-text"' in html
+    assert 'id="upload-universal-url"' in html
+    assert 'api/v1/investigations/${encodeURIComponent(currentInvId)}/evidence/intake' in html
+    assert 'handleUniversalIntake' in html
+    assert 'onUniversalFilesSelected' in html
+    assert 'setupDropZone' in html
     assert 'populateUploadModalCases' in html
     assert 'syncUploadCase' in html
     assert 'selectCaseById' in html

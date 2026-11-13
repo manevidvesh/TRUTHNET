@@ -310,6 +310,42 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             color: var(--cyan);
         }
 
+        /* Universal Ingestion Console Styles */
+        .drop-zone {
+            border: 2px dashed rgba(6, 182, 212, 0.4);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            background: rgba(6, 182, 212, 0.03);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--cyan);
+            background: rgba(6, 182, 212, 0.09);
+        }
+        .file-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .route-chip {
+            display: inline-block;
+            background: rgba(168, 85, 247, 0.12);
+            color: var(--purple);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            padding: 2px 7px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
         /* Main Workspace Content Area */
         .workspace-content {
             flex: 1;
@@ -1135,22 +1171,119 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         </div>
     </div>
 
-    <!-- MODAL 2: UPLOAD EVIDENCE -->
+    <!-- MODAL 2: UPLOAD EVIDENCE (UNIVERSAL ORCHESTRATION CONSOLE) -->
     <div id="modal-upload" class="modal-overlay">
-        <div class="modal-window">
+        <div class="modal-window" style="max-width: 720px;">
             <div class="modal-header">
-                <span style="font-size: 15px; font-weight: 700;">Ingest New Evidence</span>
+                <div>
+                    <span style="font-size: 15px; font-weight: 700; color: #ffffff;">Universal Evidence Ingestion Console</span>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Multimodal Intake · Automated Modality Classification · Fault-Isolated Dispatch</div>
+                </div>
                 <button class="drawer-close-btn" onclick="closeModal('modal-upload')">&times;</button>
             </div>
             <div style="padding: 0 20px; border-bottom: 1px solid var(--border); display: flex; gap: 10px;">
-                <button id="upload-tab-file-btn" class="tab-btn active" onclick="switchUploadMode('file')">Media File</button>
+                <button id="upload-tab-universal-btn" class="tab-btn active" onclick="switchUploadMode('universal')">Universal Intake (All-in-One)</button>
+                <button id="upload-tab-file-btn" class="tab-btn" onclick="switchUploadMode('file')">Single File</button>
                 <button id="upload-tab-text-btn" class="tab-btn" onclick="switchUploadMode('text')">Text Claim</button>
             </div>
             
             <div id="upload-feedback" style="display: none; padding: 10px 14px; border-radius: 6px; font-size: 12px; margin: 14px 20px 0 20px;"></div>
 
-            <!-- File Upload Form -->
-            <form id="form-upload-file" onsubmit="handleUploadFile(event)">
+            <!-- FORM 1: UNIVERSAL INTAKE (DEFAULT) -->
+            <form id="form-upload-universal" onsubmit="handleUniversalIntake(event)">
+                <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Target Investigation Case</span>
+                            <span class="badge badge-cyan" style="font-size: 10px;">ACTIVE CASE</span>
+                        </label>
+                        <select id="upload-case-select-universal" class="form-select" onchange="syncUploadCase(this.value)">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+
+                    <!-- Drag & Drop Zone -->
+                    <div class="form-group">
+                        <label class="form-label">Multimodal Media Files (Drag & Drop or Select Multiple)</label>
+                        <div id="drop-zone" class="drop-zone" onclick="document.getElementById('upload-universal-files').click()">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--cyan); margin-bottom: 6px;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <div style="font-size: 13px; font-weight: 600; color: #ffffff;">Drop media files here, or <span style="color: var(--cyan);">browse files</span></div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Supports PNG, JPEG, WebP, MP4, WebM, WAV, MP3 · Batch Multi-Upload Supported</div>
+                            <input type="file" id="upload-universal-files" multiple style="display: none;" onchange="onUniversalFilesSelected(this.files)">
+                        </div>
+                        <div id="selected-files-list" style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                    </div>
+
+                    <!-- Text Proposition / Claim Content -->
+                    <div class="form-group">
+                        <label class="form-label">Accompanying Claim / Social Post / Transcript</label>
+                        <textarea id="upload-universal-text" class="form-textarea" rows="2" placeholder="Paste claim text, viral post transcript, or statement..."></textarea>
+                    </div>
+
+                    <!-- External Source URL -->
+                    <div class="form-group">
+                        <label class="form-label">External Evidence URL (Article, Fact-Check, or Social Link)</label>
+                        <input type="url" id="upload-universal-url" class="form-input" placeholder="e.g. https://news.example.com/breaking-incident-coverage">
+                    </div>
+
+                    <!-- Geotemporal Anchors -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Claimed Date</label>
+                            <input type="date" id="upload-universal-date" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Claimed Location</label>
+                            <input type="text" id="upload-universal-location" class="form-input" placeholder="e.g. Hyderabad, India">
+                        </div>
+                    </div>
+
+                    <!-- Live Orchestration Route Matrix -->
+                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-top: 6px;">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px;">
+                            Automated Modality Routing Matrix:
+                        </div>
+                        <div id="orchestration-route-chips" style="display: flex; flex-wrap: wrap; gap: 5px;">
+                            <span class="route-chip">EXIF Metadata</span>
+                            <span class="route-chip">Dual-Engine OCR</span>
+                            <span class="route-chip">Video Keyframes</span>
+                            <span class="route-chip">Speech Whisper</span>
+                            <span class="route-chip">pHash/ORB Rediscovery</span>
+                            <span class="route-chip">Claim Extraction</span>
+                            <span class="route-chip">Source Independence</span>
+                        </div>
+                    </div>
+
+                    <!-- Orchestrated Breakdown Table (Shows results post-submission) -->
+                    <div id="universal-results-container" style="display: none; margin-top: 14px;">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--cyan); text-transform: uppercase; margin-bottom: 6px;">
+                            Orchestrated Ingestion Breakdown:
+                        </div>
+                        <table class="case-table" style="font-size: 11px;">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Modality</th>
+                                    <th>Status</th>
+                                    <th>Assigned Routes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="universal-results-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-upload')">Cancel</button>
+                    <button type="submit" id="btn-upload-universal" class="btn btn-cyan">Ingest & Dispatch Orchestration</button>
+                </div>
+            </form>
+
+            <!-- FORM 2: SINGLE FILE UPLOAD -->
+            <form id="form-upload-file" style="display: none;" onsubmit="handleUploadFile(event)">
                 <div class="modal-body">
                     <div class="form-group" style="margin-bottom: 16px;">
                         <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
@@ -1186,7 +1319,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 </div>
             </form>
 
-            <!-- Text Claim Form -->
+            <!-- FORM 3: TEXT CLAIM -->
             <form id="form-upload-text" style="display: none;" onsubmit="handleUploadText(event)">
                 <div class="modal-body">
                     <div class="form-group" style="margin-bottom: 16px;">
@@ -1280,6 +1413,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
         // Initialize application
         async function initWorkbench() {
+            setupDropZone();
             try {
                 const res = await fetch("/api/v1/investigations/");
                 if (res.ok) {
@@ -1922,6 +2056,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
             const fileSelect = document.getElementById("upload-case-select-file");
             const textSelect = document.getElementById("upload-case-select-text");
+            const universalSelect = document.getElementById("upload-case-select-universal");
 
             let optionsHtml = "";
             if (allInvestigationsList.length === 0) {
@@ -1937,6 +2072,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
             if (fileSelect) fileSelect.innerHTML = optionsHtml;
             if (textSelect) textSelect.innerHTML = optionsHtml;
+            if (universalSelect) universalSelect.innerHTML = optionsHtml;
         }
 
         function syncUploadCase(caseId) {
@@ -1947,8 +2083,10 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             }
             const fileSelect = document.getElementById("upload-case-select-file");
             const textSelect = document.getElementById("upload-case-select-text");
+            const universalSelect = document.getElementById("upload-case-select-universal");
             if (fileSelect && fileSelect.value !== caseId) fileSelect.value = caseId;
             if (textSelect && textSelect.value !== caseId) textSelect.value = caseId;
+            if (universalSelect && universalSelect.value !== caseId) universalSelect.value = caseId;
             updateCaseHeader();
             window.history.replaceState({}, '', `/workbench?investigation_id=${encodeURIComponent(caseId)}`);
         }
@@ -2060,17 +2198,200 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         }
 
         function switchUploadMode(mode) {
-            if (mode === 'file') {
-                document.getElementById("upload-tab-file-btn").classList.add("active");
-                document.getElementById("upload-tab-text-btn").classList.remove("active");
-                document.getElementById("form-upload-file").style.display = "block";
-                document.getElementById("form-upload-text").style.display = "none";
-            } else {
-                document.getElementById("upload-tab-file-btn").classList.remove("active");
-                document.getElementById("upload-tab-text-btn").classList.add("active");
-                document.getElementById("form-upload-file").style.display = "none";
-                document.getElementById("form-upload-text").style.display = "block";
+            const tabUniv = document.getElementById("upload-tab-universal-btn");
+            const tabFile = document.getElementById("upload-tab-file-btn");
+            const tabText = document.getElementById("upload-tab-text-btn");
+            const formUniv = document.getElementById("form-upload-universal");
+            const formFile = document.getElementById("form-upload-file");
+            const formText = document.getElementById("form-upload-text");
+
+            [tabUniv, tabFile, tabText].forEach(b => { if (b) b.classList.remove("active"); });
+            [formUniv, formFile, formText].forEach(f => { if (f) f.style.display = "none"; });
+
+            if (mode === 'universal') {
+                if (tabUniv) tabUniv.classList.add("active");
+                if (formUniv) formUniv.style.display = "block";
+            } else if (mode === 'file') {
+                if (tabFile) tabFile.classList.add("active");
+                if (formFile) formFile.style.display = "block";
+            } else if (mode === 'text') {
+                if (tabText) tabText.classList.add("active");
+                if (formText) formText.style.display = "block";
             }
+        }
+
+        let universalSelectedFiles = [];
+
+        function onUniversalFilesSelected(files) {
+            universalSelectedFiles = Array.from(files);
+            renderSelectedFilesList();
+        }
+
+        function removeSelectedFile(index) {
+            universalSelectedFiles.splice(index, 1);
+            renderSelectedFilesList();
+        }
+
+        function renderSelectedFilesList() {
+            const container = document.getElementById("selected-files-list");
+            if (!container) return;
+            if (universalSelectedFiles.length === 0) {
+                container.innerHTML = "";
+                return;
+            }
+            container.innerHTML = universalSelectedFiles.map((f, idx) => {
+                const ext = f.name.split('.').pop().toLowerCase();
+                let badgeClass = "badge-cyan";
+                let mod = "FILE";
+                if (['jpg','jpeg','png','webp','bmp','gif'].includes(ext)) { badgeClass = "badge-cyan"; mod = "IMAGE"; }
+                else if (['mp4','webm','mov','mkv','avi'].includes(ext)) { badgeClass = "badge-purple"; mod = "VIDEO"; }
+                else if (['wav','mp3','ogg','flac','m4a'].includes(ext)) { badgeClass = "badge-amber"; mod = "AUDIO"; }
+                
+                const sizeKb = (f.size / 1024).toFixed(1);
+                return `
+                    <div class="file-pill">
+                        <span class="badge ${badgeClass}" style="font-size: 9px; padding: 1px 4px;">${mod}</span>
+                        <span>${escapeHtml(f.name)} (${sizeKb} KB)</span>
+                        <span style="cursor: pointer; color: var(--red); font-weight: bold; margin-left: 4px;" onclick="removeSelectedFile(${idx})">&times;</span>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        async function handleUniversalIntake(e) {
+            e.preventDefault();
+            clearUploadFeedback();
+
+            let targetInvId = document.getElementById("upload-case-select-universal")?.value || currentInvId;
+            if ((!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") && allInvestigationsList.length > 0) {
+                targetInvId = allInvestigationsList[0].id;
+            }
+
+            if (!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") {
+                showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
+                return;
+            }
+
+            if (currentInvId !== targetInvId) {
+                syncUploadCase(targetInvId);
+            }
+
+            const rawText = document.getElementById("upload-universal-text").value.trim();
+            const sourceUrl = document.getElementById("upload-universal-url").value.trim();
+            const caption = document.getElementById("upload-universal-caption")?.value.trim() || "";
+            const claimedDate = document.getElementById("upload-universal-date").value.trim();
+            const claimedLocation = document.getElementById("upload-universal-location").value.trim();
+
+            if (universalSelectedFiles.length === 0 && !rawText && !sourceUrl) {
+                showUploadFeedback("Please provide at least one media file, text proposition, or source URL.", true);
+                return;
+            }
+
+            const submitBtn = document.getElementById("btn-upload-universal");
+            const origText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Orchestrating Ingestion & Dispatch...";
+
+            const formData = new FormData();
+            for (const f of universalSelectedFiles) {
+                formData.append("files", f);
+            }
+            if (rawText) formData.append("raw_text", rawText);
+            if (sourceUrl) formData.append("source_url", sourceUrl);
+            if (caption) formData.append("caption", caption);
+            if (claimedDate) formData.append("claimed_date", claimedDate);
+            if (claimedLocation) formData.append("claimed_location", claimedLocation);
+
+            try {
+                const res = await fetch(`/api/v1/investigations/${encodeURIComponent(currentInvId)}/evidence/intake`, {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    showUploadFeedback(`✓ ${data.summary}`, false);
+
+                    const resContainer = document.getElementById("universal-results-container");
+                    const tbody = document.getElementById("universal-results-tbody");
+                    if (resContainer && tbody && data.items) {
+                        resContainer.style.display = "block";
+                        tbody.innerHTML = data.items.map(it => {
+                            const modBadge = it.detected_modality === 'IMAGE' ? 'badge-cyan' :
+                                             it.detected_modality === 'VIDEO' ? 'badge-purple' :
+                                             it.detected_modality === 'AUDIO' ? 'badge-amber' :
+                                             it.detected_modality === 'TEXT' ? 'badge-green' : 'badge-red';
+                            const statusBadge = it.status === 'QUEUED' || it.status === 'COMPLETED' ? 'badge-green' :
+                                                it.status === 'PARTIAL' ? 'badge-amber' : 'badge-red';
+                            const routesStr = (it.assigned_routes || []).slice(0, 3).join(", ") + (it.assigned_routes?.length > 3 ? "..." : "");
+                            return `
+                                <tr>
+                                    <td><div style="font-weight:600; color:#fff;">${escapeHtml(it.filename_or_snippet)}</div></td>
+                                    <td><span class="badge ${modBadge}">${it.detected_modality}</span></td>
+                                    <td><span class="badge ${statusBadge}">${it.status}</span></td>
+                                    <td style="color:var(--text-secondary);">${escapeHtml(routesStr || it.error_message || '—')}</td>
+                                </tr>
+                            `;
+                        }).join("");
+                    }
+
+                    universalSelectedFiles = [];
+                    renderSelectedFilesList();
+                    document.getElementById("upload-universal-text").value = "";
+                    document.getElementById("upload-universal-url").value = "";
+                    const fileInput = document.getElementById("upload-universal-files");
+                    if (fileInput) fileInput.value = "";
+
+                    await loadAllCaseData();
+                    setTimeout(() => {
+                        closeModal("modal-upload");
+                        clearUploadFeedback();
+                        if (resContainer) resContainer.style.display = "none";
+                        switchTab("evidence");
+                    }, 2400);
+                } else {
+                    let errorMsg = "Intake orchestration rejected by server";
+                    try {
+                        const errData = await res.json();
+                        if (errData && errData.detail) {
+                            errorMsg = typeof errData.detail === "string" ? errData.detail : JSON.stringify(errData.detail);
+                        }
+                    } catch (_) {
+                        errorMsg = `Server returned HTTP ${res.status}: ${res.statusText}`;
+                    }
+                    showUploadFeedback(`Orchestration failed: ${errorMsg}`, true);
+                }
+            } catch (err) {
+                showUploadFeedback(`Network connection error: ${err.message}`, true);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = origText;
+            }
+        }
+
+        function setupDropZone() {
+            const dz = document.getElementById("drop-zone");
+            if (!dz) return;
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dz.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dz.classList.add('dragover');
+                }, false);
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dz.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dz.classList.remove('dragover');
+                }, false);
+            });
+            dz.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                if (dt && dt.files && dt.files.length) {
+                    onUniversalFilesSelected(dt.files);
+                }
+            }, false);
         }
 
         async function handleUploadFile(e) {

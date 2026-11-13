@@ -261,6 +261,19 @@ class PipelineService:
                     if not is_reachable:
                         raise ValueError(err_msg)
 
+                    # Safely scrape webpage article text if raw_text is not yet populated
+                    if not submission.raw_text:
+                        try:
+                            from app.retrieval.scraper import WebScraper
+                            scraped = await WebScraper.scrape_url(submission.source_url)
+                            if scraped and scraped.get("text_excerpt"):
+                                submission.raw_text = scraped["text_excerpt"]
+                                if not submission.caption and scraped.get("article_title"):
+                                    submission.caption = scraped["article_title"]
+                                await session.commit()
+                        except Exception as scrape_err:
+                            logger.warning(f"URL scraping non-fatal warning for {evidence_id}: {scrape_err}")
+
                 elif submission.submission_type == "TEXT":
                     if not submission.raw_text and not submission.caption:
                         raise ValueError("Text submission is completely empty")

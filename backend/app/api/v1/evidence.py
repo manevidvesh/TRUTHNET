@@ -14,9 +14,12 @@ from app.schemas.evidence import (
     EvidenceStatusResponse,
     MediaAssetResponse,
     ExtractionRecordResponse,
-    DerivedArtifactResponse
+    DerivedArtifactResponse,
+    UniversalIntakeResponse,
+    OrchestratedItemResult
 )
 from app.services.pipeline import pipeline_service
+from app.services.evidence_orchestrator import evidence_orchestrator
 
 router = APIRouter(prefix="/investigations/{investigation_id}/evidence", tags=["Evidence Intake"])
 
@@ -30,6 +33,42 @@ def get_submission_type(mime: str) -> str:
     elif mime.startswith("text/"):
         return "TEXT"
     return "IMAGE"
+
+@router.post("/intake", response_model=UniversalIntakeResponse, status_code=status.HTTP_201_CREATED)
+async def universal_evidence_intake(
+    investigation_id: str,
+    background_tasks: BackgroundTasks,
+    files: Optional[List[UploadFile]] = File(None),
+    raw_text: Optional[str] = Form(None),
+    source_url: Optional[str] = Form(None),
+    caption: Optional[str] = Form(None),
+    claimed_event: Optional[str] = Form(None),
+    claimed_date: Optional[str] = Form(None),
+    claimed_location: Optional[str] = Form(None),
+    language: str = Form("en"),
+    sync_process: bool = Form(False),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Universal Multimodal Intake Orchestrator.
+    Accepts single/multiple files (images, videos, audio), raw text claims, and/or source URLs,
+    classifies modalities, isolates faults, and dispatches processing pipelines.
+    """
+    return await evidence_orchestrator.orchestrate_intake(
+        db=db,
+        investigation_id=investigation_id,
+        files=files,
+        raw_text=raw_text,
+        source_url=source_url,
+        caption=caption,
+        claimed_event=claimed_event,
+        claimed_date=claimed_date,
+        claimed_location=claimed_location,
+        language=language,
+        background_tasks=background_tasks,
+        sync_process=sync_process
+    )
+
 
 @router.post("/upload", response_model=EvidenceSubmissionResponse, status_code=status.HTTP_201_CREATED)
 async def upload_evidence_file(

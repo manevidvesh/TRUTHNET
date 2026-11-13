@@ -84,3 +84,30 @@ class ExtractionRecordResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class OrchestratedItemResult(BaseModel):
+    submission_id: str | None = None
+    item_type: str  # FILE, TEXT, URL
+    filename_or_snippet: str
+    detected_modality: str  # IMAGE, VIDEO, AUDIO, TEXT, URL, UNSUPPORTED
+    status: str  # QUEUED, PROCESSING, COMPLETED, PARTIAL, FAILED, UNSUPPORTED
+    assigned_routes: list[str] = Field(default_factory=list)
+    sha256_hash: str | None = None
+    mime_type: str | None = None
+    file_size_bytes: int | None = None
+    error_message: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UniversalIntakeResponse(BaseModel):
+    investigation_id: str
+    total_items_received: int
+    accepted_items_count: int
+    rejected_items_count: int
+    items: list[OrchestratedItemResult]
+    summary: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
