@@ -1424,6 +1424,26 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                         currentInvId = allInvestigationsList[0].id;
                         currentInvTitle = allInvestigationsList[0].title;
                         window.history.replaceState({}, '', `/workbench?investigation_id=${encodeURIComponent(currentInvId)}`);
+                    } else if (allInvestigationsList.length === 0) {
+                        try {
+                            const initRes = await fetch("/api/v1/investigations/", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    title: "Primary Misinformation Investigation",
+                                    description: "Initial case workspace created automatically",
+                                    priority: "HIGH"
+                                })
+                            });
+                            if (initRes.ok) {
+                                const newCase = await initRes.json();
+                                allInvestigationsList = [newCase];
+                                allInvestigationsMap[newCase.id] = newCase;
+                                currentInvId = newCase.id;
+                                currentInvTitle = newCase.title;
+                                window.history.replaceState({}, '', `/workbench?investigation_id=${encodeURIComponent(currentInvId)}`);
+                            }
+                        } catch (_) {}
                     }
                 }
             } catch (e) {
@@ -1683,24 +1703,223 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 </div>
             `).join("");
 
-            forContainer.innerHTML = reportData.submissions.map(s => `
-                <div class="finding-card">
-                    <div class="finding-header">
-                        <span class="finding-title">Forensic Profile: ${s.id}</span>
-                        <span class="badge badge-cyan">${s.submission_type}</span>
+            const authRecords = reportData.authenticity_records || [];
+
+            forContainer.innerHTML = reportData.submissions.map(s => {
+                const auth = authRecords.find(r => r.evidence_submission_id === s.id);
+                if (!auth) {
+                    return `
+                    <div class="finding-card">
+                        <div class="finding-header">
+                            <span class="finding-title">Evidence Forensic Profile: ${s.id.substring(0, 8)}...</span>
+                            <span class="badge badge-cyan">${s.submission_type}</span>
+                        </div>
+                        <div style="font-size: 13px; color: var(--text-muted); margin: 8px 0;">
+                            ${s.submission_type === 'TEXT' || s.submission_type === 'URL' 
+                                ? 'Textual/URL evidence item. Visual compression and spectral deepfake detection apply to IMAGE and VIDEO modalities.'
+                                : 'Authenticity evaluation pending or processing.'}
+                        </div>
+                        ${(s.submission_type === 'IMAGE' || s.submission_type === 'VIDEO') ? `
+                            <button class="btn btn-secondary btn-sm" onclick="reanalyzeAuthenticity('${s.id}')" style="margin-top: 6px;">
+                                Run Forensic & Authenticity Audit
+                            </button>
+                        ` : ''}
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; font-size: 12px;">
+                    `;
+                }
+
+                const forensic = auth.forensic_analysis || {};
+                const ela = forensic.ela_analysis || {};
+                const noise = forensic.noise_analysis || {};
+                const spectral = forensic.spectral_analysis || {};
+                const meta = forensic.metadata_anomalies || {};
+                const execModels = auth.executed_model_results || [];
+                const unavailModels = auth.unavailable_models || [];
+                const videoFrames = auth.video_frame_analyses || [];
+
+                return `
+                <div class="finding-card" style="margin-bottom: 20px;">
+                    <div class="finding-header" style="border-bottom: 1px solid var(--card-border); padding-bottom: 12px; margin-bottom: 14px;">
                         <div>
-                            <div style="color: var(--text-muted); margin-bottom: 2px;">PERCEPTUAL & CRYPTOGRAPHIC HASHES</div>
-                            <div class="mono" style="color: var(--cyan);">SHA-256: ${s.media_asset?.sha256_hash || 'Computed on intake'}</div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="finding-title" style="font-size: 15px;">Media Authenticity & Forensic Audit</span>
+                                <span class="badge badge-cyan">${s.submission_type}</span>
+                                <span class="badge badge-purple">v${auth.version}</span>
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-family: 'JetBrains Mono', monospace;">
+                                Submission ID: ${s.id}
+                            </div>
                         </div>
-                        <div>
-                            <div style="color: var(--text-muted); margin-bottom: 2px;">TIME & GEOLOCATION CONSISTENCY</div>
-                            <div>Claimed: <b>${s.claimed_date || 'None'}</b> | EXIF Sensor: <b>Verified Timestamp</b></div>
+                        <button class="btn btn-secondary btn-sm" onclick="reanalyzeAuthenticity('${s.id}')" title="Re-run physical forensics and registered models">
+                            ↻ Re-audit Media
+                        </button>
+                    </div>
+
+                    <!-- 1. TECHNICAL FORENSIC MEASUREMENTS -->
+                    <div style="margin-bottom: 16px;">
+                        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--cyan); margin-bottom: 8px;">
+                            OBSERVED TECHNICAL FORENSIC MEASUREMENTS (PHYSICAL ANOMALIES)
                         </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
+                            <!-- ELA -->
+                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                                <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">ERROR LEVEL ANALYSIS (ELA)</div>
+                                <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px;">
+                                    <span>Mean Diff:</span>
+                                    <span class="mono" style="color: #ffffff;">${ela.mean_error !== undefined ? ela.mean_error : 'N/A'}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                                    <span>Max Diff:</span>
+                                    <span class="mono" style="color: #ffffff;">${ela.max_error !== undefined ? ela.max_error : 'N/A'}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                                    <span>High Divergence Ratio:</span>
+                                    <span class="mono" style="color: ${ela.high_divergence_ratio > 0.05 ? 'var(--amber)' : 'var(--emerald)'};">${ela.high_divergence_ratio !== undefined ? (ela.high_divergence_ratio * 100).toFixed(1) + '%' : 'N/A'}</span>
+                                </div>
+                            </div>
+
+                            <!-- High Frequency Noise Residuals -->
+                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                                <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">NOISE RESIDUAL VARIANCE</div>
+                                <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px;">
+                                    <span>Channel Divergence:</span>
+                                    <span class="mono" style="color: ${noise.channel_divergence > 3.0 ? 'var(--amber)' : 'var(--emerald)'};">${noise.channel_divergence !== undefined ? noise.channel_divergence + 'x' : 'N/A'}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                                    <span>Quadrant Spatial Spread:</span>
+                                    <span class="mono" style="color: #ffffff;">${noise.spatial_quadrant_spread !== undefined ? noise.spatial_quadrant_spread + 'x' : 'N/A'}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                                    <span>R / G / B Variances:</span>
+                                    <span class="mono" style="font-size: 10px; color: var(--text-muted);">${noise.channel_variances ? `${noise.channel_variances.r}/${noise.channel_variances.g}/${noise.channel_variances.b}` : 'N/A'}</span>
+                                </div>
+                            </div>
+
+                            <!-- 2D Spectral Decay -->
+                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                                <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">2D FFT / DCT RADIAL SPECTRUM</div>
+                                <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px;">
+                                    <span>Decay Slope:</span>
+                                    <span class="mono" style="color: #ffffff;">${spectral.decay_slope !== undefined ? spectral.decay_slope : 'N/A'}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                                    <span>Periodic High-Freq Peak:</span>
+                                    <span class="mono" style="color: ${spectral.high_freq_peak_ratio > 4.0 ? 'var(--amber)' : 'var(--emerald)'};">${spectral.high_freq_peak_ratio !== undefined ? spectral.high_freq_peak_ratio + 'x' : 'N/A'}</span>
+                                </div>
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+                                    ${spectral.high_freq_peak_ratio > 4.0 ? 'Periodic high-frequency spikes (possible GAN/Diffusion upsampling grid)' : 'Natural power law spectral decay observed'}
+                                </div>
+                            </div>
+
+                            <!-- Metadata & EXIF -->
+                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                                <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">METADATA & SOFTWARE AUDIT</div>
+                                <div style="margin-top: 6px; font-size: 12px;">
+                                    <span>Generative AI Signatures:</span>
+                                    <b style="color: ${meta.generative_ai_tags && meta.generative_ai_tags.length ? 'var(--accent-red)' : 'var(--emerald)'};">
+                                        ${meta.generative_ai_tags && meta.generative_ai_tags.length ? meta.generative_ai_tags.join(', ') : 'None detected'}
+                                    </b>
+                                </div>
+                                <div style="margin-top: 4px; font-size: 12px;">
+                                    <span>Editing Software Tags:</span>
+                                    <span class="mono" style="color: ${meta.editing_software_tags && meta.editing_software_tags.length ? 'var(--amber)' : 'var(--text-muted)'};">
+                                        ${meta.editing_software_tags && meta.editing_software_tags.length ? meta.editing_software_tags.join(', ') : 'None'}
+                                    </span>
+                                </div>
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+                                    Sensor Model: ${meta.camera_model || 'Stripped / Excluded'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. MODEL REGISTRY & EXECUTION AUDIT -->
+                    <div style="margin-bottom: 16px;">
+                        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--purple); margin-bottom: 8px;">
+                            DEEPFAKE DETECTION MODEL REGISTRY & EXECUTION STATUS
+                        </div>
+                        <div style="overflow-x: auto; border: 1px solid var(--card-border); border-radius: 6px;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                                <thead style="background: rgba(15, 23, 42, 0.8); border-bottom: 1px solid var(--card-border);">
+                                    <tr>
+                                        <th style="padding: 8px 12px;">Model</th>
+                                        <th style="padding: 8px 12px;">Architecture</th>
+                                        <th style="padding: 8px 12px;">Status</th>
+                                        <th style="padding: 8px 12px;">Runtime / Device</th>
+                                        <th style="padding: 8px 12px;">Observed Output / Reason</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${execModels.map(em => `
+                                        <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); background: rgba(16, 185, 129, 0.04);">
+                                            <td style="padding: 8px 12px; font-weight: 600; color: #ffffff;">${em.model_name || em.model_id}</td>
+                                            <td style="padding: 8px 12px; color: var(--text-muted);">${em.architecture || 'Feature Analyzer'}</td>
+                                            <td style="padding: 8px 12px;"><span class="badge badge-emerald">INFERENCE_EXECUTED</span></td>
+                                            <td style="padding: 8px 12px; font-family: 'JetBrains Mono', monospace;">${em.runtime_device || 'cpu'}</td>
+                                            <td style="padding: 8px 12px; color: var(--text-secondary);">${em.interpretation || JSON.stringify(em.raw_metrics)}</td>
+                                        </tr>
+                                    `).join("")}
+                                    ${unavailModels.map(um => `
+                                        <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); background: rgba(245, 158, 11, 0.02);">
+                                            <td style="padding: 8px 12px; font-weight: 600; color: #ffffff;">${um.model_name || um.model_id}</td>
+                                            <td style="padding: 8px 12px; color: var(--text-muted);">${um.architecture || 'Deepfake Classifier'}</td>
+                                            <td style="padding: 8px 12px;"><span class="badge badge-amber">${um.status}</span></td>
+                                            <td style="padding: 8px 12px; color: var(--text-muted); font-size: 11px;">Not deployed</td>
+                                            <td style="padding: 8px 12px; color: var(--text-muted); font-size: 11px;">${um.reason} <span style="color: var(--amber);">[${um.prerequisites}]</span></td>
+                                        </tr>
+                                    `).join("")}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 3. VIDEO KEYFRAME BREAKDOWN (IF APPLICABLE) -->
+                    ${videoFrames.length > 0 ? `
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--cyan); margin-bottom: 8px;">
+                                BOUNDARY-ANCHORED VIDEO KEYFRAME CHECKPOINTS (${videoFrames.length} FRAMES SAMPLED)
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;">
+                                ${videoFrames.map(vf => `
+                                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; font-size: 11px;">
+                                        <div style="display: flex; justify-content: space-between; font-weight: 600; color: #ffffff;">
+                                            <span>Frame #${vf.frame_index}</span>
+                                            <span class="mono" style="color: var(--cyan);">${vf.timestamp_seconds ? vf.timestamp_seconds + 's' : (vf.timestamp_ms || 0) + 'ms'}</span>
+                                        </div>
+                                        <div style="color: var(--text-muted); margin-top: 4px;">ELA Error: <b>${vf.ela_mean_error || 'N/A'}</b></div>
+                                        <div style="color: var(--text-muted);">Spectral Slope: <b>${vf.spectral_decay_slope || 'N/A'}</b></div>
+                                        <div style="color: var(--text-muted);">Faces: <b>${vf.faces_detected !== undefined ? vf.faces_detected : 'N/A'}</b></div>
+                                    </div>
+                                `).join("")}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <!-- 4. EPISTEMIC LIMITATIONS BANNER -->
+                    <div style="background: rgba(245, 158, 11, 0.06); border-left: 3px solid var(--amber); padding: 8px 12px; border-radius: 4px; font-size: 11px; color: var(--text-secondary); margin-top: 10px;">
+                        <b>Epistemic Principle:</b> ${auth.epistemic_disclaimer}
                     </div>
                 </div>
-            `).join("");
+                `;
+            }).join("");
+        }
+
+        async function reanalyzeAuthenticity(subId) {
+            if (!currentInvId) return;
+            try {
+                const res = await fetch(`/api/v1/investigations/${currentInvId}/evidence/${subId}/authenticity/reanalyze`, {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    alert('Forensic & Deepfake analysis re-executed successfully!');
+                    await loadInvestigationData();
+                } else {
+                    const err = await res.json();
+                    alert('Reanalysis failed: ' + (err.detail || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Reanalysis request failed: ' + e.message);
+            }
         }
 
         // ==========================================
@@ -2258,21 +2477,79 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             }).join("");
         }
 
+        async function ensureActiveCase(targetSelectId) {
+            let targetInvId = document.getElementById(targetSelectId)?.value || currentInvId;
+            if (targetInvId && targetInvId !== "{{INV_ID}}" && targetInvId !== "") {
+                return targetInvId;
+            }
+
+            if (allInvestigationsList && allInvestigationsList.length > 0) {
+                targetInvId = allInvestigationsList[0].id;
+                currentInvId = targetInvId;
+                currentInvTitle = allInvestigationsList[0].title;
+                updateCaseHeader();
+                syncUploadCase(targetInvId);
+                return targetInvId;
+            }
+
+            // Fetch from API
+            try {
+                const res = await fetch("/api/v1/investigations/");
+                if (res.ok) {
+                    const cases = await res.json();
+                    if (cases && cases.length > 0) {
+                        allInvestigationsList = cases;
+                        cases.forEach(c => { allInvestigationsMap[c.id] = c; });
+                        targetInvId = cases[0].id;
+                        currentInvId = targetInvId;
+                        currentInvTitle = cases[0].title;
+                        updateCaseHeader();
+                        syncUploadCase(targetInvId);
+                        return targetInvId;
+                    }
+                }
+            } catch (_) {}
+
+            // Auto-create initial investigation if DB is empty
+            try {
+                const createRes = await fetch("/api/v1/investigations/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        title: "Primary Misinformation Investigation",
+                        description: "Initial case workspace created automatically for evidence ingestion",
+                        priority: "HIGH"
+                    })
+                });
+                if (createRes.ok) {
+                    const newCase = await createRes.json();
+                    allInvestigationsList = [newCase];
+                    allInvestigationsMap[newCase.id] = newCase;
+                    targetInvId = newCase.id;
+                    currentInvId = targetInvId;
+                    currentInvTitle = newCase.title;
+                    updateCaseHeader();
+                    syncUploadCase(targetInvId);
+                    return targetInvId;
+                }
+            } catch (_) {}
+
+            return null;
+        }
+
         async function handleUniversalIntake(e) {
             e.preventDefault();
             clearUploadFeedback();
 
-            let targetInvId = document.getElementById("upload-case-select-universal")?.value || currentInvId;
-            if ((!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") && allInvestigationsList.length > 0) {
-                targetInvId = allInvestigationsList[0].id;
-            }
-
-            if (!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") {
-                showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
+            const targetInvId = await ensureActiveCase("upload-case-select-universal");
+            if (!targetInvId) {
+                showUploadFeedback("Failed to resolve or initialize active investigation. Please check backend connection.", true);
                 return;
             }
 
             if (currentInvId !== targetInvId) {
+                syncUploadCase(targetInvId);
+            }
                 syncUploadCase(targetInvId);
             }
 
@@ -2398,13 +2675,9 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             e.preventDefault();
             clearUploadFeedback();
 
-            let targetInvId = document.getElementById("upload-case-select-file")?.value || currentInvId;
-            if ((!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") && allInvestigationsList.length > 0) {
-                targetInvId = allInvestigationsList[0].id;
-            }
-
-            if (!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") {
-                showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
+            const targetInvId = await ensureActiveCase("upload-case-select-file");
+            if (!targetInvId) {
+                showUploadFeedback("Failed to resolve active investigation. Please create a case first.", true);
                 return;
             }
 
@@ -2479,13 +2752,9 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             e.preventDefault();
             clearUploadFeedback();
 
-            let targetInvId = document.getElementById("upload-case-select-text")?.value || currentInvId;
-            if ((!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") && allInvestigationsList.length > 0) {
-                targetInvId = allInvestigationsList[0].id;
-            }
-
-            if (!targetInvId || targetInvId === "{{INV_ID}}" || targetInvId === "") {
-                showUploadFeedback("No active investigation selected. Please open or create a case first.", true);
+            const targetInvId = await ensureActiveCase("upload-case-select-text");
+            if (!targetInvId) {
+                showUploadFeedback("Failed to resolve active investigation. Please create a case first.", true);
                 return;
             }
 

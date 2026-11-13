@@ -17,6 +17,7 @@ from app.extractors.ocr import ocr_service
 from app.extractors.transcription import transcription_service
 from app.indexing.indexer import media_indexer
 from app.matching.engine import match_engine
+from app.services.authenticity_service import authenticity_service
 
 logger = logging.getLogger("truthnet.pipeline")
 
@@ -252,6 +253,12 @@ class PipelineService:
                         await match_engine.match_evidence(session, submission.id)
                     except Exception as m_err:
                         logger.warning(f"Auto-matching failed for submission {submission.id}: {m_err}")
+
+                    # Phase 5: Media Authenticity & Deepfake Model Detection
+                    try:
+                        await authenticity_service.analyze_submission(session, submission.id)
+                    except Exception as auth_err:
+                        logger.warning(f"Authenticity analysis non-fatal failure for submission {submission.id}: {auth_err}")
 
                 elif submission.submission_type == "URL":
                     if not submission.source_url:

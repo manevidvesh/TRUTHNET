@@ -5,6 +5,7 @@ from app.models.claim import ClaimRecord, ClaimExtractionRun, SubmissionProcessi
 from app.models.context_verification import ClaimAssessmentRecord, ClaimEvidenceRelationRecord
 from app.models.source import RetrievedSourceRecord, SourceIndependenceRecord
 from app.models.relationship import LineageRelationshipRecord
+from app.models.authenticity import MediaAuthenticityRecord
 
 __all__ = [
     "Investigation",
@@ -23,4 +24,5 @@ __all__ = [
     "RetrievedSourceRecord",
     "SourceIndependenceRecord",
     "LineageRelationshipRecord",
+    "MediaAuthenticityRecord",
 ]

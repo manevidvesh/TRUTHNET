@@ -12,6 +12,7 @@ from app.models.source import RetrievedSourceRecord, SourceIndependenceRecord
 from app.models.fingerprint import MediaMatchRecord
 from app.models.context_verification import ClaimAssessmentRecord
 from app.models.relationship import LineageRelationshipRecord
+from app.models.authenticity import MediaAuthenticityRecord
 from app.schemas.investigation import (
     InvestigationCreate,
     InvestigationUpdate,
@@ -250,6 +251,17 @@ async def build_investigation_report_data(investigation_id: str, db: AsyncSessio
     )
     relationships = rel_res.scalars().all()
 
+    # 10. Authenticity & Deepfake Records
+    auth_records = []
+    if sub_ids:
+        auth_res = await db.execute(
+            select(MediaAuthenticityRecord).where(
+                MediaAuthenticityRecord.evidence_submission_id.in_(sub_ids),
+                MediaAuthenticityRecord.is_active == True
+            )
+        )
+        auth_records = auth_res.scalars().all()
+
     # Simulation check
     is_simulated = any(
         "SIMULATED" in str(x).upper()
@@ -365,6 +377,21 @@ async def build_investigation_report_data(investigation_id: str, db: AsyncSessio
         "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None
     } for r in relationships if r.review_status != "UNREVIEWED"]
 
+    # Clean authenticity records
+    clean_authenticity = [{
+        "id": a.id,
+        "evidence_submission_id": a.evidence_submission_id,
+        "media_asset_id": a.media_asset_id,
+        "version": a.version,
+        "forensic_analysis": a.forensic_analysis,
+        "model_registry_summary": a.model_registry_summary,
+        "executed_model_results": a.executed_model_results,
+        "unavailable_models": a.unavailable_models,
+        "video_frame_analyses": a.video_frame_analyses,
+        "epistemic_disclaimer": a.epistemic_disclaimer,
+        "created_at": a.created_at.isoformat() if a.created_at else None
+    } for a in auth_records]
+
     # Epistemic Limitations & Guidelines
     limitations = [
         "1. Media Authenticity vs Proposition Truth: Visual matching indicates whether media existed previously or was edited, but does not independently prove or disprove accompanying textual propositions.",
@@ -414,6 +441,7 @@ async def build_investigation_report_data(investigation_id: str, db: AsyncSessio
         "contextual_assessments": clean_assessments,
         "epistemic_limitations": limitations,
         "human_review_log": clean_reviews,
+        "authenticity_records": clean_authenticity,
         "generated_at": utc_now().isoformat()
     }
 
@@ -513,6 +541,40 @@ def render_html_report(data: Dict[str, Any]) -> str:
 
     limitations_html = "".join(f"<li>{item}</li>" for item in data.get("epistemic_limitations", []))
 
+    auth_html = ""
+    for auth in data.get("authenticity_records", []):
+        forensic = auth.get("forensic_analysis", {})
+        ela = forensic.get("ela_analysis", {})
+        spectral = forensic.get("spectral_analysis", {})
+        noise = forensic.get("noise_analysis", {})
+        exec_models = auth.get("executed_model_results", [])
+        unavail = auth.get("unavailable_models", [])
+
+        exec_models_str = ", ".join(m.get("model_name", m.get("model_id")) for m in exec_models) or "None executed"
+        unavail_models_str = ", ".join(f"{u.get('model_name') or u.get('model_id')} ({u.get('status')})" for u in unavail)
+
+        auth_html += f"""
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
+                <strong>Submission:</strong> <code>{auth['evidence_submission_id'][:8]}...</code>
+                <span>Version: <b>v{auth['version']}</b></span>
+            </div>
+            <p style="margin: 6px 0; font-size: 13px;"><b>Forensic Summary:</b> {forensic.get('forensic_summary', 'Analyzed')}</p>
+            <div style="background: #e2e8f0; padding: 8px; border-radius: 4px; font-size: 12px; margin: 6px 0;">
+                <b>Technical Measurements:</b> ELA Mean Error: <code>{ela.get('mean_error', 'N/A')}</code> | Noise Channel Divergence: <code>{noise.get('channel_divergence', 'N/A')}</code> | 2D Spectral Decay Slope: <code>{spectral.get('decay_slope', 'N/A')}</code>
+            </div>
+            <div style="font-size: 12px; margin: 4px 0;">
+                <b>Executed Models:</b> <span style="color: #059669;">{exec_models_str}</span>
+            </div>
+            <div style="font-size: 12px; color: #64748b; margin: 4px 0;">
+                <b>Unavailable/Excluded Models:</b> {unavail_models_str}
+            </div>
+            <div style="font-size: 11px; color: #d97706; margin-top: 6px;">
+                <i>{auth.get('epistemic_disclaimer')}</i>
+            </div>
+        </div>
+        """
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -546,6 +608,9 @@ def render_html_report(data: Dict[str, Any]) -> str:
 
     <h2>Historical Media Rediscovery Findings</h2>
     {media_matches_html or '<p style="color: #94a3b8;">No historical media matches recorded.</p>'}
+
+    <h2>Media Authenticity & Deepfake Forensic Analysis</h2>
+    {auth_html or '<p style="color: #94a3b8;">No media authenticity records found.</p>'}
 
     <h2>Retrieved External Sources & Fact-Checks</h2>
     {sources_html or '<p style="color: #94a3b8;">No external sources retrieved.</p>'}

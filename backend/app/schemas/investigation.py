@@ -40,4 +40,5 @@ class InvestigationReportResponse(BaseModel):
     contextual_assessments: List[Dict[str, Any]]
     epistemic_limitations: List[str]
     human_review_log: List[Dict[str, Any]]
+    authenticity_records: Optional[List[Dict[str, Any]]] = None
     generated_at: str
