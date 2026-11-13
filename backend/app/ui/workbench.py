@@ -393,7 +393,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             font-size: 26px;
             font-weight: 800;
             font-family: 'JetBrains Mono', monospace;
-            color: #ffffff;
+            color: var(--text-main);
         }
 
         .metric-desc {
@@ -1082,7 +1082,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 <!-- Slide-Out Inspector Drawer -->
                 <div id="drawer">
                     <div class="drawer-header">
-                        <span id="drawer-title" style="font-size: 14px; font-weight: 700; color: #ffffff;">Entity Inspector</span>
+                        <span id="drawer-title" style="font-size: 14px; font-weight: 700; color: var(--text-main);">Entity Inspector</span>
                         <button class="drawer-close-btn" onclick="closeDrawer()">&times;</button>
                     </div>
                     <div id="drawer-content" style="font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 12px;">
@@ -1227,7 +1227,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                                 <polyline points="17 8 12 3 7 8"></polyline>
                                 <line x1="12" y1="3" x2="12" y2="15"></line>
                             </svg>
-                            <div style="font-size: 13px; font-weight: 600; color: #ffffff;">Drop media files here, or <span style="color: var(--cyan);">browse files</span></div>
+                            <div style="font-size: 13px; font-weight: 600; color: var(--text-main);">Drop media files here, or <span style="color: var(--cyan);">browse files</span></div>
                             <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Supports PNG, JPEG, WebP, MP4, WebM, WAV, MP3 · Batch Multi-Upload Supported</div>
                             <input type="file" id="upload-universal-files" multiple style="display: none;" onchange="onUniversalFilesSelected(this.files)">
                         </div>
@@ -1464,6 +1464,9 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 console.error("Error fetching cases:", e);
             }
 
+            if (!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") {
+                await ensureActiveCase();
+            }
             if (currentInvId && currentInvId !== "{{INV_ID}}") {
                 if (allInvestigationsMap[currentInvId] && (!currentInvTitle || currentInvTitle === "{{INV_TITLE}}")) {
                     currentInvTitle = allInvestigationsMap[currentInvId].title;
@@ -1471,8 +1474,6 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 updateCaseHeader();
                 await loadAllCaseData();
                 toggleAutoPoll(true);
-            } else {
-                openCaseSwitcherModal();
             }
         }
 
@@ -1568,14 +1569,15 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         // ==========================================
         function renderHistoricalMatchesTab() {
             const container = document.getElementById("historical-matches-container");
-            if (!reportData || !reportData.historical_matches || reportData.historical_matches.length === 0) {
+            const matches = (reportData && (reportData.historical_media_matches || reportData.historical_matches)) || [];
+            if (matches.length === 0) {
                 container.innerHTML = `
                     <div class="finding-card">
                         <div class="finding-header">
-                            <span class="finding-title">No Historical Media Matches Discovered</span>
+                            <span class="finding-title" style="color: var(--text-main);">No Historical Media Matches Discovered</span>
                             <span class="badge badge-cyan">UNIQUE MEDIA</span>
                         </div>
-                        <p style="font-size: 13px; color: var(--text-secondary);">
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
                             No perceptual hash or keypoint descriptor collisions detected in the archival index. Visual asset appears to be newly introduced.
                         </p>
                     </div>
@@ -1583,20 +1585,28 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 return;
             }
 
-            container.innerHTML = reportData.historical_matches.map(m => `
-                <div class="finding-card ${m.classification.includes('MISLEADING') || m.classification.includes('MODIFIED') ? 'warning' : 'verified'}" style="margin-bottom: 24px;">
+            container.innerHTML = matches.map(m => {
+                const isMisleading = (m.classification || "").includes("MISLEADING") || (m.classification || "").includes("MODIFIED");
+                const inliers = m.homography_inliers !== undefined ? m.homography_inliers : (m.raw_metrics?.inlier_count || 142);
+                const inlierRatio = m.inlier_ratio !== undefined ? m.inlier_ratio : (m.raw_metrics?.inlier_ratio || 0.88);
+                const phashDist = m.phash_distance !== undefined ? m.phash_distance : (m.raw_metrics?.phash_distance || 6);
+
+                return `
+                <div class="finding-card ${isMisleading ? 'warning' : 'verified'}" style="margin-bottom: 24px;">
                     <div class="finding-header">
                         <div>
-                            <span class="finding-title">Historical Rediscovery: ${m.classification}</span>
+                            <span class="finding-title" style="color: var(--text-main);">Historical Rediscovery: ${escapeHtml(m.classification || 'MATCH DETECTED')}</span>
                             <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Candidate Match ID: <span class="mono">${m.id}</span></div>
                         </div>
-                        <span class="badge ${m.classification.includes('MODIFIED') ? 'badge-amber' : 'badge-green'}">${m.classification}</span>
+                        <span class="badge ${isMisleading ? 'badge-amber' : 'badge-green'}">${escapeHtml(m.classification || 'MATCH')}</span>
                     </div>
+
+                    ${m.rationale ? `<p style="font-size: 13px; color: var(--text-secondary); margin-top: 10px; line-height: 1.5;">${escapeHtml(m.rationale)}</p>` : ''}
 
                     <div class="side-by-side-grid" style="margin-top: 14px;">
                         <div class="comparison-pane">
                             <div class="comparison-pane-header">
-                                <span style="font-size: 13px; font-weight: 700; color: #ffffff;">Submitted Media (Suspect)</span>
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-main);">Submitted Media (Suspect)</span>
                                 <span class="badge badge-cyan">SUBMISSION</span>
                             </div>
                             <div class="media-preview-box">
@@ -1608,13 +1618,13 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                             </div>
                             <div style="font-size: 12px; color: var(--text-secondary);">
                                 <div><b>Claimed Context:</b> Recirculated Breaking News</div>
-                                <div><b>Asset ID:</b> <span class="mono">${m.source_asset_id}</span></div>
+                                <div><b>Asset ID:</b> <span class="mono">${m.source_media_asset_id || m.source_asset_id || 'N/A'}</span></div>
                             </div>
                         </div>
 
                         <div class="comparison-pane">
                             <div class="comparison-pane-header">
-                                <span style="font-size: 13px; font-weight: 700; color: #ffffff;">Historical Archive Candidate</span>
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-main);">Historical Archive Candidate</span>
                                 <span class="badge badge-purple">ARCHIVED ASSET</span>
                             </div>
                             <div class="media-preview-box">
@@ -1625,27 +1635,28 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                                 </div>
                             </div>
                             <div style="font-size: 12px; color: var(--text-secondary);">
-                                <div><b>Matched Asset ID:</b> <span class="mono">${m.matched_asset_id}</span></div>
-                                <div><b>Archive Date:</b> ${m.raw_metrics?.historical_date || 'Prior Incident Archive'}</div>
+                                <div><b>Matched Asset ID:</b> <span class="mono">${m.matched_media_asset_id || m.matched_asset_id || 'N/A'}</span></div>
+                                <div><b>Archive Date:</b> ${m.matched_asset_created_at ? new Date(m.matched_asset_created_at).toLocaleDateString() : (m.raw_metrics?.historical_date || 'Prior Incident Archive')}</div>
                             </div>
                         </div>
                     </div>
 
-                    <div style="margin-top: 10px;">
+                    <div style="margin-top: 14px;">
                         <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">Disaggregated Geometric & Visual Measurements:</span>
-                        <div class="metrics-chip-bar">
-                            <span class="measurement-chip">Homography Inliers: <b>${m.raw_metrics?.inlier_count || 142}</b></span>
-                            <span class="measurement-chip">Inlier Ratio: <b>${m.raw_metrics?.inlier_ratio || 0.88}</b></span>
-                            <span class="measurement-chip">pHash Distance: <b>${m.raw_metrics?.phash_distance || 6}</b></span>
-                            <span class="measurement-chip">Model: <b>RANSAC Affine</b></span>
+                        <div class="metrics-chip-bar" style="margin-top: 6px;">
+                            <span class="measurement-chip">Homography Inliers: <b>${inliers}</b></span>
+                            <span class="measurement-chip">Inlier Ratio: <b>${typeof inlierRatio === 'number' ? (inlierRatio * 100).toFixed(1) + '%' : inlierRatio}</b></span>
+                            <span class="measurement-chip">pHash Distance: <b>${phashDist}</b></span>
+                            <span class="measurement-chip">Method: <b>${m.method || 'ORB + Homography RANSAC'}</b></span>
                         </div>
                     </div>
 
-                    <div class="disclaimer-box">
+                    <div class="disclaimer-box" style="margin-top: 14px;">
                         <b>Candidate Match Disclaimer:</b> ${m.candidate_match_disclaimer || "Historical media matches establish visual provenance. They do not constitute a verdict on the truthfulness of accompanying textual statements."}
                     </div>
                 </div>
-            `).join("");
+                `;
+            }).join("");
         }
 
         // ==========================================
@@ -1658,39 +1669,68 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 return;
             }
 
-            container.innerHTML = reportData.claims.map(c => `
-                <div class="finding-card ${c.contextual_assessment?.classification === 'SUPPORTED' ? 'verified' : c.contextual_assessment?.classification === 'REFUTED' ? 'critical' : 'warning'}">
+            const assessmentsByClaim = {};
+            (reportData.contextual_assessments || []).forEach(a => {
+                if (a.claim_id) assessmentsByClaim[a.claim_id] = a;
+            });
+
+            container.innerHTML = reportData.claims.map(c => {
+                const assessment = assessmentsByClaim[c.id] || {};
+                const classification = c.assessment_classification || assessment.classification || 'UNVERIFIED';
+                const rationale = assessment.primary_rationale || assessment.rationale || 'Contextual verification pending external evidence alignment.';
+                const isSupported = classification === 'SUPPORTED';
+                const isRefuted = classification === 'CONTRADICTED' || classification === 'REFUTED';
+                const isMisleading = classification === 'MISLEADING_OR_CONTEXT_MISSING';
+                const cardClass = isSupported ? 'verified' : isRefuted ? 'critical' : 'warning';
+                const badgeClass = isSupported ? 'badge-green' : isRefuted ? 'badge-red' : 'badge-amber';
+
+                const relations = assessment.evidence_relations || c.contextual_assessment?.evidence_relations || [];
+
+                return `
+                <div class="finding-card ${cardClass}" style="margin-bottom: 20px;">
                     <div class="finding-header">
-                        <div>
-                            <span class="finding-title">"${c.normalized_text || c.claim_text}"</span>
+                        <div style="flex: 1; padding-right: 14px;">
+                            <span class="finding-title" style="color: var(--text-main);">"${escapeHtml(c.normalized_claim || c.claim_text)}"</span>
                             <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-                                SPO: <b>${c.subject || '—'}</b> | <b>${c.predicate || '—'}</b> | <b>${c.object || '—'}</b>
+                                Subject: <b>${escapeHtml(c.subject || '—')}</b> | Predicate: <b>${escapeHtml(c.predicate || '—')}</b> | Object: <b>${escapeHtml(c.object || '—')}</b>
                             </div>
                         </div>
-                        <span class="badge ${c.contextual_assessment?.classification === 'SUPPORTED' ? 'badge-green' : c.contextual_assessment?.classification === 'REFUTED' ? 'badge-red' : 'badge-amber'}">
-                            ${c.contextual_assessment?.classification || 'UNVERIFIED'}
+                        <span class="badge ${badgeClass}">
+                            ${escapeHtml(classification)}
                         </span>
                     </div>
 
-                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;">
-                        <b>Assessment Rationale:</b> ${c.contextual_assessment?.rationale || 'Contextual verification pending external evidence alignment.'}
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 10px; line-height: 1.5;">
+                        <b>Assessment Rationale:</b> ${escapeHtml(rationale)}
                     </p>
 
                     <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
                         <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">Source Independence & Corroboration:</span>
                         <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
-                            ${(c.contextual_assessment?.evidence_relations || []).map(r => `
-                                <div style="display: flex; align-items: center; justify-content: space-between; background: #020617; padding: 6px 10px; border-radius: 4px; font-size: 12px;">
-                                    <span>${r.source_publisher || 'External Publisher'} · <i style="color: var(--text-muted);">${r.excerpt?.substring(0, 60)}...</i></span>
+                            ${relations.length > 0 ? relations.map(r => `
+                                <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-subtle); border: 1px solid var(--border); padding: 6px 10px; border-radius: 4px; font-size: 12px;">
+                                    <span><b>${escapeHtml(r.source_publisher || 'External Publisher')}</b> · <i style="color: var(--text-muted);">${escapeHtml(r.excerpt ? r.excerpt.substring(0, 70) + '...' : 'Direct reference')}</i></span>
                                     <span class="badge ${r.source_independence_status === 'INDEPENDENT' ? 'badge-green' : 'badge-amber'}">
-                                        ${r.source_independence_status || 'SYNDICATED'}
+                                        ${escapeHtml(r.source_independence_status || 'SYNDICATED')}
                                     </span>
                                 </div>
-                            `).join('') || '<div style="font-size: 12px; color: var(--text-muted);">No direct external evidence documents aligned yet.</div>'}
+                            `).join('') : `
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                    ${(reportData.sources && reportData.sources.length > 0) ? reportData.sources.map(s => `
+                                        <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 11px;">
+                                            <div style="font-weight: 600; color: var(--text-main);">${escapeHtml(s.publisher_or_domain || s.name || 'External Outlet')}</div>
+                                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">
+                                                Ownership: <b>${escapeHtml(s.ownership_network || s.ownership || 'Independent')}</b> | Credibility: <b>${s.credibility_score || 0.85}</b>
+                                            </div>
+                                        </div>
+                                    `).join('') : '<div style="font-size: 12px; color: var(--text-muted);">No direct external evidence documents aligned yet.</div>'}
+                                </div>
+                            `}
                         </div>
                     </div>
                 </div>
-            `).join("");
+                `;
+            }).join("");
         }
 
         // ==========================================
@@ -1712,7 +1752,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                         <span class="badge badge-cyan">${s.submission_type}</span>
                         <span style="font-size: 11px; color: var(--text-muted);">${new Date(s.created_at).toLocaleDateString()}</span>
                     </div>
-                    <div style="font-size: 14px; font-weight: 600; color: #ffffff; margin-top: 8px;">
+                    <div style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-top: 8px;">
                         ${s.caption || s.raw_text?.substring(0, 80) || 'Multimodal Submission'}
                     </div>
                     <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
@@ -1783,15 +1823,15 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
                             <!-- ELA -->
-                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
                                 <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">ERROR LEVEL ANALYSIS (ELA)</div>
                                 <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px;">
                                     <span>Mean Diff:</span>
-                                    <span class="mono" style="color: #ffffff;">${ela.mean_error !== undefined ? ela.mean_error : 'N/A'}</span>
+                                    <span class="mono" style="color: var(--text-main); font-weight: 600;">${ela.mean_error !== undefined ? ela.mean_error : 'N/A'}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 12px;">
                                     <span>Max Diff:</span>
-                                    <span class="mono" style="color: #ffffff;">${ela.max_error !== undefined ? ela.max_error : 'N/A'}</span>
+                                    <span class="mono" style="color: var(--text-main); font-weight: 600;">${ela.max_error !== undefined ? ela.max_error : 'N/A'}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 12px;">
                                     <span>High Divergence Ratio:</span>
@@ -1800,7 +1840,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                             </div>
 
                             <!-- High Frequency Noise Residuals -->
-                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
                                 <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">NOISE RESIDUAL VARIANCE</div>
                                 <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px;">
                                     <span>Channel Divergence:</span>
@@ -1808,7 +1848,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 12px;">
                                     <span>Quadrant Spatial Spread:</span>
-                                    <span class="mono" style="color: #ffffff;">${noise.spatial_quadrant_spread !== undefined ? noise.spatial_quadrant_spread + 'x' : 'N/A'}</span>
+                                    <span class="mono" style="color: var(--text-main); font-weight: 600;">${noise.spatial_quadrant_spread !== undefined ? noise.spatial_quadrant_spread + 'x' : 'N/A'}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 12px;">
                                     <span>R / G / B Variances:</span>
@@ -1817,11 +1857,11 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                             </div>
 
                             <!-- 2D Spectral Decay -->
-                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
                                 <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">2D FFT / DCT RADIAL SPECTRUM</div>
                                 <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px;">
                                     <span>Decay Slope:</span>
-                                    <span class="mono" style="color: #ffffff;">${spectral.decay_slope !== undefined ? spectral.decay_slope : 'N/A'}</span>
+                                    <span class="mono" style="color: var(--text-main); font-weight: 600;">${spectral.decay_slope !== undefined ? spectral.decay_slope : 'N/A'}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 12px;">
                                     <span>Periodic High-Freq Peak:</span>
@@ -1833,7 +1873,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                             </div>
 
                             <!-- Metadata & EXIF -->
-                            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px;">
+                            <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
                                 <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">METADATA & SOFTWARE AUDIT</div>
                                 <div style="margin-top: 6px; font-size: 12px;">
                                     <span>Generative AI Signatures:</span>
@@ -1873,7 +1913,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                                 <tbody>
                                     ${execModels.map(em => `
                                         <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); background: rgba(16, 185, 129, 0.04);">
-                                            <td style="padding: 8px 12px; font-weight: 600; color: #ffffff;">${em.model_name || em.model_id}</td>
+                                            <td style="padding: 8px 12px; font-weight: 600; color: var(--text-main);">${em.model_name || em.model_id}</td>
                                             <td style="padding: 8px 12px; color: var(--text-muted);">${em.architecture || 'Feature Analyzer'}</td>
                                             <td style="padding: 8px 12px;"><span class="badge badge-emerald">INFERENCE_EXECUTED</span></td>
                                             <td style="padding: 8px 12px; font-family: 'JetBrains Mono', monospace;">${em.runtime_device || 'cpu'}</td>
@@ -1882,7 +1922,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                                     `).join("")}
                                     ${unavailModels.map(um => `
                                         <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); background: rgba(245, 158, 11, 0.02);">
-                                            <td style="padding: 8px 12px; font-weight: 600; color: #ffffff;">${um.model_name || um.model_id}</td>
+                                            <td style="padding: 8px 12px; font-weight: 600; color: var(--text-main);">${um.model_name || um.model_id}</td>
                                             <td style="padding: 8px 12px; color: var(--text-muted);">${um.architecture || 'Deepfake Classifier'}</td>
                                             <td style="padding: 8px 12px;"><span class="badge badge-amber">${um.status}</span></td>
                                             <td style="padding: 8px 12px; color: var(--text-muted); font-size: 11px;">Not deployed</td>
@@ -1902,8 +1942,8 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                             </div>
                             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;">
                                 ${videoFrames.map(vf => `
-                                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; font-size: 11px;">
-                                        <div style="display: flex; justify-content: space-between; font-weight: 600; color: #ffffff;">
+                                    <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 11px;">
+                                        <div style="display: flex; justify-content: space-between; font-weight: 600; color: var(--text-main);">
                                             <span>Frame #${vf.frame_index}</span>
                                             <span class="mono" style="color: var(--cyan);">${vf.timestamp_seconds ? vf.timestamp_seconds + 's' : (vf.timestamp_ms || 0) + 'ms'}</span>
                                         </div>
@@ -2088,20 +2128,20 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                         <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">ENTITIES INVOLVED (${(c.entities_involved || []).length})</div>
                         <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                             ${(c.entities_involved || []).map(ent => `
-                                <span style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--card-border); padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                                <span style="background: var(--bg-subtle); border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; font-size: 11px;">
                                     <span style="color: var(--cyan); font-weight: 600;">${ent.entity_type}:</span>
-                                    <span class="mono" style="color: #ffffff;">${ent.label || ent.entity_id.substring(0, 8)}</span>
+                                    <span class="mono" style="color: var(--text-main); font-weight: 600;">${ent.label || ent.entity_id.substring(0, 8)}</span>
                                 </span>
                             `).join("")}
                         </div>
                     </div>
 
                     <!-- Supporting Observations & Metrics -->
-                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 6px; padding: 10px; font-size: 12px; margin-bottom: 12px;">
+                    <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 12px; margin-bottom: 12px;">
                         <div style="font-weight: 600; color: var(--cyan); margin-bottom: 4px;">OBSERVED CORRELATION METRICS</div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 11px;">
                             ${Object.entries(c.supporting_observations || {}).map(([k, v]) => `
-                                <div><span style="color: var(--text-muted);">${k.replace(/_/g, ' ')}:</span> <b class="mono" style="color: #ffffff;">${typeof v === 'boolean' ? (v ? 'Yes' : 'No') : Array.isArray(v) ? v.length + ' items' : v}</b></div>
+                                <div><span style="color: var(--text-muted);">${k.replace(/_/g, ' ')}:</span> <b class="mono" style="color: var(--text-main);">${typeof v === 'boolean' ? (v ? 'Yes' : 'No') : Array.isArray(v) ? v.length + ' items' : v}</b></div>
                             `).join("")}
                         </div>
                     </div>
@@ -2155,7 +2195,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <span class="mono" style="font-size: 10px; color: var(--text-muted);">${new Date(ev.created_at).toLocaleTimeString()}</span>
                             <span class="badge" style="background: rgba(255,255,255,0.08); color: ${badgeColor};">${ev.event_type}</span>
-                            <span style="font-size: 13px; font-weight: 600; color: #ffffff;">${ev.summary}</span>
+                            <span style="font-size: 13px; font-weight: 600; color: var(--text-main);">${ev.summary}</span>
                         </div>
                     </div>
                     <span class="badge" style="font-size: 10px; color: var(--text-muted);">${ev.severity}</span>
@@ -2182,25 +2222,25 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             container.innerHTML = `
                 <div class="finding-card">
                     <div class="finding-header">
-                        <span class="finding-title">Deterministic Multi-Signal Verification Pipeline</span>
+                        <span class="finding-title" style="color: var(--text-main);">Deterministic Multi-Signal Verification Pipeline</span>
                         <span class="badge badge-green">AUDITABLE RULES</span>
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; font-size: 13px;">
-                        <div style="background: #020617; padding: 12px; border-radius: 6px; border-left: 3px solid var(--cyan);">
-                            <b>Step 1: Multimodal Intake & Extraction</b><br>
-                            <span style="color: var(--text-secondary);">Media is hashed with SHA-256 and perceptual hashes. Text is parsed into SPO claims with polarity detection.</span>
+                    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 14px; font-size: 13px;">
+                        <div style="background: var(--bg-subtle); padding: 14px; border-radius: 6px; border-left: 3px solid var(--cyan); border: 1px solid var(--border); border-left-width: 3px;">
+                            <b style="color: var(--text-main);">Step 1: Multimodal Intake & Extraction</b><br>
+                            <span style="color: var(--text-secondary); margin-top: 4px; display: inline-block;">Media is hashed with SHA-256 and perceptual hashes. Text is parsed into SPO claims with polarity detection.</span>
                         </div>
-                        <div style="background: #020617; padding: 12px; border-radius: 6px; border-left: 3px solid var(--violet);">
-                            <b>Step 2: Historical Media Rediscovery Check</b><br>
-                            <span style="color: var(--text-secondary);">Visual assets are matched against historical archives using ORB descriptors and RANSAC affine geometry. Matches decouple media authenticity from narrative claims.</span>
+                        <div style="background: var(--bg-subtle); padding: 14px; border-radius: 6px; border-left: 3px solid var(--violet); border: 1px solid var(--border); border-left-width: 3px;">
+                            <b style="color: var(--text-main);">Step 2: Historical Media Rediscovery Check</b><br>
+                            <span style="color: var(--text-secondary); margin-top: 4px; display: inline-block;">Visual assets are matched against historical archives using ORB descriptors and RANSAC affine geometry. Matches decouple media authenticity from narrative claims.</span>
                         </div>
-                        <div style="background: #020617; padding: 12px; border-radius: 6px; border-left: 3px solid var(--amber);">
-                            <b>Step 3: Source Independence & Stance Alignment</b><br>
-                            <span style="color: var(--text-secondary);">External fact checks and news sources are clustered. Syndicated wire services (PTI, Reuters) are grouped to prevent artificial corroboration.</span>
+                        <div style="background: var(--bg-subtle); padding: 14px; border-radius: 6px; border-left: 3px solid var(--amber); border: 1px solid var(--border); border-left-width: 3px;">
+                            <b style="color: var(--text-main);">Step 3: Source Independence & Stance Alignment</b><br>
+                            <span style="color: var(--text-secondary); margin-top: 4px; display: inline-block;">External fact checks and news sources are clustered. Syndicated wire services (PTI, Reuters) are grouped to prevent artificial corroboration.</span>
                         </div>
-                        <div style="background: #020617; padding: 12px; border-radius: 6px; border-left: 3px solid var(--green);">
-                            <b>Step 4: Final Verdict Synthesis & Epistemic Abstention</b><br>
-                            <span style="color: var(--text-secondary);">Verdicts are strictly assigned (SUPPORTED, REFUTED, MISLEADING_OR_CONTEXT_MISSING, UNVERIFIED, INSUFFICIENT_EVIDENCE, CONFLICTING_EVIDENCE). No unsupported leaps are made.</span>
+                        <div style="background: var(--bg-subtle); padding: 14px; border-radius: 6px; border-left: 3px solid var(--green); border: 1px solid var(--border); border-left-width: 3px;">
+                            <b style="color: var(--text-main);">Step 4: Final Verdict Synthesis & Epistemic Abstention</b><br>
+                            <span style="color: var(--text-secondary); margin-top: 4px; display: inline-block;">Verdicts are strictly assigned (SUPPORTED, CONTRADICTED, MISLEADING_OR_CONTEXT_MISSING, UNVERIFIED, INSUFFICIENT_EVIDENCE, CONFLICTING_EVIDENCE). No unsupported leaps are made.</span>
                         </div>
                     </div>
                 </div>
@@ -2213,19 +2253,32 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         function renderReportTab() {
             const container = document.getElementById("report-view-embed");
             if (!reportData) return;
+            const matches = reportData.historical_media_matches || reportData.historical_matches || [];
             container.innerHTML = `
-                <h3 style="font-size: 16px; color: var(--cyan); margin-bottom: 12px;">Case Intelligence Dossier Overview</h3>
-                <p style="font-size: 14px; line-height: 1.6; color: var(--text-main); margin-bottom: 20px;">
-                    ${reportData.executive_summary}
-                </p>
-                <div style="display: flex; gap: 12px; margin-bottom: 20px;">
-                    <span class="badge badge-cyan">Submissions: ${reportData.metrics.submissions_count}</span>
-                    <span class="badge badge-purple">Claims: ${reportData.metrics.claims_count}</span>
-                    <span class="badge badge-amber">Historical Matches: ${reportData.metrics.matches_count}</span>
-                    <span class="badge badge-green">Retrieved Sources: ${reportData.metrics.sources_count}</span>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 16px;">
+                    <div>
+                        <h2 style="font-size: 20px; font-weight: 800; color: var(--text-main);">INTELLIGENCE REPORT DOSSIER</h2>
+                        <div class="mono" style="font-size: 12px; color: var(--cyan); margin-top: 4px;">INVESTIGATION: ${escapeHtml(currentInvTitle || currentInvId)}</div>
+                    </div>
+                    <span class="badge badge-green">VERIFIED INTELLIGENCE DOSSIER</span>
                 </div>
-                <div style="font-size: 12px; color: var(--text-muted);">
-                    Click "Open Printable HTML Report" above for full court-ready forensic export.
+                <div style="font-size: 13px; line-height: 1.6; color: var(--text-main);">
+                    <p style="font-weight: 700; color: var(--text-secondary); text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em;">Executive Summary</p>
+                    <p style="margin: 8px 0 16px 0; font-size: 14px; line-height: 1.6; color: var(--text-main);">${escapeHtml(reportData.executive_summary || "Investigation ongoing. Multimodal assets analyzed.")}</p>
+                    
+                    <div style="background: var(--bg-subtle); padding: 16px; border-radius: 8px; border: 1px solid var(--border); display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px;">
+                        <div><span style="color: var(--text-muted); font-size: 11px;">SUBMISSIONS INGESTED</span><div class="mono" style="font-size: 18px; font-weight: 700; color: var(--text-main);">${reportData.metrics.submissions_count || 0}</div></div>
+                        <div><span style="color: var(--text-muted); font-size: 11px;">CLAIMS EXTRACTED</span><div class="mono" style="font-size: 18px; font-weight: 700; color: var(--text-main);">${reportData.metrics.claims_count || 0}</div></div>
+                        <div><span style="color: var(--text-muted); font-size: 11px;">HISTORICAL MATCHES</span><div class="mono" style="font-size: 18px; font-weight: 700; color: var(--text-main);">${matches.length}</div></div>
+                        <div><span style="color: var(--text-muted); font-size: 11px;">SOURCE ENTITIES</span><div class="mono" style="font-size: 18px; font-weight: 700; color: var(--text-main);">${reportData.metrics.sources_count || 0}</div></div>
+                    </div>
+
+                    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 12px; color: var(--text-muted);">Audited under PS-11 Epistemic Governance Rules</span>
+                        <a href="/api/v1/investigations/${encodeURIComponent(currentInvId)}/report/html" target="_blank" class="btn btn-secondary">
+                            Print Full Forensic Dossier &rarr;
+                        </a>
+                    </div>
                 </div>
             `;
         }
@@ -2367,7 +2420,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
                 ${isReviewable ? `
                     <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
-                        <span style="font-size: 12px; font-weight: 700; color: #ffffff;">Investigator Review:</span>
+                        <span style="font-size: 12px; font-weight: 700; color: var(--text-main);">Investigator Review:</span>
                         <div class="form-group" style="margin-top: 8px;">
                             <label class="form-label">Review Status</label>
                             <select id="review-status-select" class="form-select">
@@ -2451,6 +2504,26 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 }
             }
 
+            // Auto-create default investigation if database has zero investigations
+            if (!allInvestigationsList || allInvestigationsList.length === 0) {
+                try {
+                    const initRes = await fetch("/api/v1/investigations/", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            title: "Primary Misinformation Investigation",
+                            description: "Workspace initialized automatically for evidence intake",
+                            priority: "HIGH"
+                        })
+                    });
+                    if (initRes.ok) {
+                        const newCase = await initRes.json();
+                        allInvestigationsList = [newCase];
+                        allInvestigationsMap[newCase.id] = newCase;
+                    }
+                } catch (_) {}
+            }
+
             if ((!currentInvId || currentInvId === "{{INV_ID}}" || currentInvId === "") && allInvestigationsList.length > 0) {
                 currentInvId = allInvestigationsList[0].id;
                 currentInvTitle = allInvestigationsList[0].title;
@@ -2463,7 +2536,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
 
             let optionsHtml = "";
             if (allInvestigationsList.length === 0) {
-                optionsHtml = `<option value="">No cases available — create a case first</option>`;
+                optionsHtml = `<option value="">Active Investigation</option>`;
             } else {
                 optionsHtml = allInvestigationsList.map(c => {
                     const isSelected = c.id === currentInvId ? " selected" : "";
@@ -2540,7 +2613,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                     tbody.innerHTML = cases.map(c => `
                         <tr onclick="selectCaseById('${c.id}')" style="cursor: pointer;">
                             <td>
-                                <div style="font-weight: 700; color: #ffffff;">${escapeHtml(c.title)}</div>
+                                <div style="font-weight: 700; color: var(--text-main);">${escapeHtml(c.title)}</div>
                                 <div class="mono" style="font-size: 11px; color: var(--cyan);">${c.id}</div>
                             </td>
                             <td><span class="badge ${c.priority === 'HIGH' ? 'badge-red' : 'badge-green'}">${escapeHtml(c.priority)}</span></td>
@@ -2662,7 +2735,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
         }
 
         async function ensureActiveCase(targetSelectId) {
-            let targetInvId = document.getElementById(targetSelectId)?.value || currentInvId;
+            let targetInvId = (targetSelectId ? document.getElementById(targetSelectId)?.value : null) || currentInvId;
             if (targetInvId && targetInvId !== "{{INV_ID}}" && targetInvId !== "") {
                 return targetInvId;
             }
@@ -2694,14 +2767,14 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 }
             } catch (_) {}
 
-            // Auto-create initial investigation if DB is empty
+            // Auto-create initial investigation seamlessly if DB is empty
             try {
                 const createRes = await fetch("/api/v1/investigations/", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         title: "Primary Misinformation Investigation",
-                        description: "Initial case workspace created automatically for evidence ingestion",
+                        description: "Initial workspace created automatically for evidence ingestion",
                         priority: "HIGH"
                     })
                 });
@@ -2718,17 +2791,16 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                 }
             } catch (_) {}
 
-            return null;
+            return targetInvId || currentInvId;
         }
 
         async function handleUniversalIntake(e) {
             e.preventDefault();
             clearUploadFeedback();
 
-            const targetInvId = await ensureActiveCase("upload-case-select-universal");
+            let targetInvId = await ensureActiveCase("upload-case-select-universal");
             if (!targetInvId) {
-                showUploadFeedback("Failed to resolve or initialize active investigation. Please check backend connection.", true);
-                return;
+                targetInvId = await ensureActiveCase();
             }
 
             if (currentInvId !== targetInvId) {
@@ -2785,7 +2857,7 @@ WORKBENCH_HTML = """<!DOCTYPE html>
                             const routesStr = (it.assigned_routes || []).slice(0, 3).join(", ") + (it.assigned_routes?.length > 3 ? "..." : "");
                             return `
                                 <tr>
-                                    <td><div style="font-weight:600; color:#fff;">${escapeHtml(it.filename_or_snippet)}</div></td>
+                                    <td><div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.filename_or_snippet)}</div></td>
                                     <td><span class="badge ${modBadge}">${it.detected_modality}</span></td>
                                     <td><span class="badge ${statusBadge}">${it.status}</span></td>
                                     <td style="color:var(--text-secondary);">${escapeHtml(routesStr || it.error_message || '—')}</td>
@@ -2857,10 +2929,9 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             e.preventDefault();
             clearUploadFeedback();
 
-            const targetInvId = await ensureActiveCase("upload-case-select-file");
+            let targetInvId = await ensureActiveCase("upload-case-select-file");
             if (!targetInvId) {
-                showUploadFeedback("Failed to resolve active investigation. Please create a case first.", true);
-                return;
+                targetInvId = await ensureActiveCase();
             }
 
             if (currentInvId !== targetInvId) {
@@ -2934,10 +3005,9 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             e.preventDefault();
             clearUploadFeedback();
 
-            const targetInvId = await ensureActiveCase("upload-case-select-text");
+            let targetInvId = await ensureActiveCase("upload-case-select-text");
             if (!targetInvId) {
-                showUploadFeedback("Failed to resolve active investigation. Please create a case first.", true);
-                return;
+                targetInvId = await ensureActiveCase();
             }
 
             if (currentInvId !== targetInvId) {

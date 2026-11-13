@@ -353,7 +353,14 @@ async def workbench_ui(
         inv_res = await db.execute(select(Investigation).order_by(Investigation.updated_at.desc()).limit(1))
         inv = inv_res.scalars().first()
         if not inv:
-            return HTMLResponse("<html><body style='background:#0f172a;color:#f8fafc;font-family:sans-serif;padding:40px;'><h2>TRUTHNET AI Workbench</h2><p>No investigations found in database. Please initialize or create an investigation first.</p></body></html>")
+            inv = Investigation(
+                title="Primary Misinformation Investigation",
+                description="Default intelligence workspace auto-created for investigation.",
+                priority="HIGH"
+            )
+            db.add(inv)
+            await db.commit()
+            await db.refresh(inv)
 
     html_content = HTML_EXPLORER_TEMPLATE.replace("{{INV_ID}}", inv.id).replace("{{INV_TITLE}}", inv.title)
     return HTMLResponse(content=html_content)
