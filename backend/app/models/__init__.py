@@ -4,6 +4,7 @@ from app.models.fingerprint import MediaFingerprint, FrameFingerprint, MediaMatc
 from app.models.claim import ClaimRecord, ClaimExtractionRun, SubmissionProcessingLock
 from app.models.context_verification import ClaimAssessmentRecord, ClaimEvidenceRelationRecord
 from app.models.source import RetrievedSourceRecord, SourceIndependenceRecord
+from app.models.relationship import LineageRelationshipRecord
 
 __all__ = [
     "Investigation",
@@ -21,4 +22,5 @@ __all__ = [
     "ClaimEvidenceRelationRecord",
     "RetrievedSourceRecord",
     "SourceIndependenceRecord",
+    "LineageRelationshipRecord",
 ]
