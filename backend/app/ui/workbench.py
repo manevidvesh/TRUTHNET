@@ -2761,8 +2761,6 @@ WORKBENCH_HTML = """<!DOCTYPE html>
             if (currentInvId !== targetInvId) {
                 syncUploadCase(targetInvId);
             }
-                syncUploadCase(targetInvId);
-            }
 
             const rawText = document.getElementById("upload-universal-text").value.trim();
             const sourceUrl = document.getElementById("upload-universal-url").value.trim();
